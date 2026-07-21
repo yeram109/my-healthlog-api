@@ -1,10 +1,143 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>마이 헬스 로그</title>
+<meta charset="UTF-8" />
+<title>마이 헬스 로그</title>
+<style>
+  html { color-scheme: light; }
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #222; background: #fff; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; }
+  .user-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 1.5rem; }
+  .user-bar input { padding: 6px 8px; }
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  form label { display: flex; flex-direction: column; font-size: 0.85rem; color: #555; }
+  form input { padding: 6px 8px; margin-top: 4px; }
+  form .full { grid-column: 1 / -1; }
+  button { padding: 8px 16px; cursor: pointer; }
+  #submit-btn { grid-column: 1 / -1; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9rem; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  .warn { color: #b00020; font-size: 0.8rem; }
+  #error { color: #b00020; margin-top: 8px; }
+</style>
 </head>
 <body>
-  <p>화면은 Day 3에서 구현됩니다.</p>
+  <h1>마이 헬스 로그</h1>
+
+  <div class="user-bar">
+    <label for="user-id">X-User-Id</label>
+    <input id="user-id" type="text" value="guest" />
+    <button id="reload-btn">목록 새로고침</button>
+  </div>
+
+  <h2>기록 추가</h2>
+  <form id="record-form">
+    <label class="full">날짜
+      <input type="date" name="date" required />
+    </label>
+    <label>몸무게(kg)
+      <input type="number" step="0.1" name="weight" required />
+    </label>
+    <label>키(cm)
+      <input type="number" step="0.1" name="height" required />
+    </label>
+    <label>수축기 혈압
+      <input type="number" name="systolic" required />
+    </label>
+    <label>이완기 혈압
+      <input type="number" name="diastolic" required />
+    </label>
+    <label>공복 혈당
+      <input type="number" name="blood_sugar" required />
+    </label>
+    <label>걸음 수
+      <input type="number" name="steps" value="0" />
+    </label>
+    <label>수면 시간
+      <input type="number" step="0.1" name="sleep_hours" value="0" />
+    </label>
+    <label class="full">메모
+      <input type="text" name="memo" />
+    </label>
+    <button id="submit-btn" type="submit">저장</button>
+  </form>
+  <div id="error"></div>
+
+  <h2>기록 목록</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>id</th><th>날짜</th><th>몸무게</th><th>BMI</th><th>BMI 분류</th>
+        <th>혈압</th><th>혈당</th><th>경고</th>
+      </tr>
+    </thead>
+    <tbody id="record-list"></tbody>
+  </table>
+
+<script>
+function currentUser() {
+  return document.getElementById("user-id").value.trim() || "guest";
+}
+
+async function loadRecords() {
+  const res = await fetch("/records", { headers: { "X-User-Id": currentUser() } });
+  const data = await res.json();
+  const tbody = document.getElementById("record-list");
+  tbody.innerHTML = "";
+  for (const r of data.records) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.date}</td>
+      <td>${r.weight}</td>
+      <td>${r.bmi}</td>
+      <td>${r.bmi_category}</td>
+      <td>${r.bp_category}</td>
+      <td>${r.sugar_category}</td>
+      <td class="warn">${r.warnings.join(", ")}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("reload-btn").addEventListener("click", loadRecords);
+
+document.getElementById("record-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById("error");
+  errorEl.textContent = "";
+
+  const form = e.target;
+  const payload = {
+    date: form.date.value,
+    weight: parseFloat(form.weight.value),
+    height: parseFloat(form.height.value),
+    systolic: parseInt(form.systolic.value, 10),
+    diastolic: parseInt(form.diastolic.value, 10),
+    blood_sugar: parseInt(form.blood_sugar.value, 10),
+    steps: parseInt(form.steps.value || "0", 10),
+    sleep_hours: parseFloat(form.sleep_hours.value || "0"),
+    memo: form.memo.value,
+  };
+
+  const res = await fetch("/records", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-User-Id": currentUser() },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    errorEl.textContent = "저장 실패: " + JSON.stringify(err.detail);
+    return;
+  }
+
+  form.reset();
+  await loadRecords();
+});
+
+loadRecords();
+</script>
 </body>
 </html>

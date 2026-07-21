@@ -157,3 +157,85 @@ def test_delete_other_users_record_returns_403():
     created = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"}).json()
     res = client.delete(f"/records/{created['id']}", headers={"X-User-Id": "bob"})
     assert res.status_code == 403
+
+
+def test_search_without_range_returns_all_own_records():
+    client.post("/records", json={**SAMPLE_RECORD, "date": "2026-07-10"}, headers={"X-User-Id": "alice"})
+    client.post("/records", json={**SAMPLE_RECORD, "date": "2026-07-20"}, headers={"X-User-Id": "alice"})
+
+    res = client.get("/search", headers={"X-User-Id": "alice"})
+    assert res.status_code == 200
+    assert res.json()["count"] == 2
+
+
+def test_search_with_one_sided_range():
+    client.post("/records", json={**SAMPLE_RECORD, "date": "2026-07-10"}, headers={"X-User-Id": "alice"})
+    client.post("/records", json={**SAMPLE_RECORD, "date": "2026-07-20"}, headers={"X-User-Id": "alice"})
+
+    res = client.get("/search?start=2026-07-15", headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["count"] == 1
+    assert body["records"][0]["date"] == "2026-07-20"
+
+
+def test_search_with_both_bounds():
+    client.post("/records", json={**SAMPLE_RECORD, "date": "2026-07-01"}, headers={"X-User-Id": "alice"})
+    client.post("/records", json={**SAMPLE_RECORD, "date": "2026-07-10"}, headers={"X-User-Id": "alice"})
+    client.post("/records", json={**SAMPLE_RECORD, "date": "2026-07-20"}, headers={"X-User-Id": "alice"})
+
+    res = client.get("/search?start=2026-07-05&end=2026-07-15", headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["count"] == 1
+    assert body["records"][0]["date"] == "2026-07-10"
+
+
+def test_search_start_after_end_returns_422():
+    res = client.get("/search?start=2026-07-20&end=2026-07-01", headers={"X-User-Id": "alice"})
+    assert res.status_code == 422
+
+
+def test_search_invalid_date_format_returns_422():
+    res = client.get("/search?start=2026/07/20", headers={"X-User-Id": "alice"})
+    assert res.status_code == 422
+
+
+def test_stats_empty_returns_nulls():
+    res = client.get("/stats", headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["count"] == 0
+    assert body["avg_weight"] is None
+    assert body["avg_bmi"] is None
+    assert body["bmi_category_counts"] == {"저체중": 0, "정상": 0, "과체중": 0, "비만": 0}
+
+
+def test_stats_computes_averages_and_category_counts():
+    normal_record = {**SAMPLE_RECORD, "weight": 70.5, "height": 175, "systolic": 118, "diastolic": 76, "blood_sugar": 95}
+    risky_record = {**SAMPLE_RECORD, "weight": 90, "height": 160, "systolic": 150, "diastolic": 95, "blood_sugar": 130}
+    client.post("/records", json=normal_record, headers={"X-User-Id": "alice"})
+    client.post("/records", json=risky_record, headers={"X-User-Id": "alice"})
+
+    res = client.get("/stats", headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["count"] == 2
+    assert body["avg_bmi"] == round((23.0 + 35.2) / 2, 1)
+    assert body["bmi_category_counts"]["과체중"] == 1
+    assert body["bmi_category_counts"]["비만"] == 1
+    assert body["bp_category_counts"]["정상"] == 1
+    assert body["bp_category_counts"]["고혈압"] == 1
+
+
+def test_stats_scoped_to_user():
+    client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"})
+    client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "bob"})
+
+    res = client.get("/stats", headers={"X-User-Id": "alice"})
+    assert res.json()["count"] == 1
+
+    res_admin = client.get("/stats", headers={"X-User-Id": "admin"})
+    assert res_admin.json()["count"] == 2
+
+
+def test_root_serves_html_page():
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "text/html" in res.headers["content-type"]
