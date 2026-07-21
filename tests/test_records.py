@@ -79,3 +79,81 @@ def test_invalid_date_format_returns_422():
     bad_record = {**SAMPLE_RECORD, "date": "2026/07/20"}
     res = client.post("/records", json=bad_record, headers={"X-User-Id": "alice"})
     assert res.status_code == 422
+
+
+def test_create_record_includes_bmi_and_categories():
+    res = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["bmi"] == 23.0
+    assert body["bmi_category"] == "과체중"
+    assert body["bp_category"] == "정상"
+    assert body["sugar_category"] == "정상"
+    assert body["warnings"] == []
+
+
+def test_warnings_triggered_for_high_risk_values():
+    risky_record = {
+        **SAMPLE_RECORD,
+        "weight": 90,
+        "height": 160,
+        "systolic": 150,
+        "diastolic": 95,
+        "blood_sugar": 130,
+    }
+    res = client.post("/records", json=risky_record, headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["bmi_category"] == "비만"
+    assert body["bp_category"] == "고혈압"
+    assert body["sugar_category"] == "당뇨 의심"
+    assert len(body["warnings"]) == 3
+
+
+def test_put_updates_record():
+    created = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"}).json()
+    updated_body = {**SAMPLE_RECORD, "weight": 68.0, "memo": "updated"}
+    res = client.put(f"/records/{created['id']}", json=updated_body, headers={"X-User-Id": "alice"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["weight"] == 68.0
+    assert body["memo"] == "updated"
+    assert body["user"] == "alice"
+
+
+def test_put_missing_id_returns_404():
+    res = client.put("/records/999", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"})
+    assert res.status_code == 404
+
+
+def test_put_other_users_record_returns_403():
+    created = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"}).json()
+    res = client.put(f"/records/{created['id']}", json=SAMPLE_RECORD, headers={"X-User-Id": "bob"})
+    assert res.status_code == 403
+
+
+def test_admin_can_put_others_record():
+    created = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"}).json()
+    updated_body = {**SAMPLE_RECORD, "weight": 60.0}
+    res = client.put(f"/records/{created['id']}", json=updated_body, headers={"X-User-Id": "admin"})
+    assert res.status_code == 200
+    assert res.json()["weight"] == 60.0
+
+
+def test_delete_record_success():
+    created = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"}).json()
+    res = client.delete(f"/records/{created['id']}", headers={"X-User-Id": "alice"})
+    assert res.status_code == 200
+    assert res.json() == {"message": "삭제되었습니다", "deleted_id": created["id"]}
+
+    follow_up = client.get(f"/records/{created['id']}", headers={"X-User-Id": "alice"})
+    assert follow_up.status_code == 404
+
+
+def test_delete_missing_id_returns_404():
+    res = client.delete("/records/999", headers={"X-User-Id": "alice"})
+    assert res.status_code == 404
+
+
+def test_delete_other_users_record_returns_403():
+    created = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"}).json()
+    res = client.delete(f"/records/{created['id']}", headers={"X-User-Id": "bob"})
+    assert res.status_code == 403
