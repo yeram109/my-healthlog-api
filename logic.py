@@ -32,6 +32,22 @@ def classify_sugar(blood_sugar: int) -> str:
     return "당뇨 의심"
 
 
+def classify_steps(steps: int) -> str:
+    if steps < 5000:
+        return "부족"
+    if steps <= 9999:
+        return "적정"
+    return "우수"
+
+
+def classify_sleep(sleep_hours: float) -> str:
+    if sleep_hours < 7:
+        return "부족"
+    if sleep_hours <= 9:
+        return "적정"
+    return "과다"
+
+
 def generate_warnings(bmi_category: str, bp_category: str, sugar_category: str) -> list[str]:
     warnings = []
     if bmi_category == "비만":
@@ -56,6 +72,8 @@ def enrich_record(record: dict[str, Any]) -> dict[str, Any]:
         "bp_category": bp_category,
         "sugar_category": sugar_category,
         "warnings": warnings,
+        "steps_grade": classify_steps(record["steps"]),
+        "sleep_category": classify_sleep(record["sleep_hours"]),
     }
 
 

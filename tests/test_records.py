@@ -358,3 +358,32 @@ def test_weekly_report_scoped_to_user():
 
     res = client.get("/reports/weekly", headers={"X-User-Id": "alice"})
     assert res.json()["this_week"]["count"] == 1
+
+
+def test_default_steps_and_sleep_categories():
+    res = client.post("/records", json=SAMPLE_RECORD, headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["steps_grade"] == "적정"
+    assert body["sleep_category"] == "적정"
+
+
+def test_steps_grade_boundary_values():
+    def steps_grade(steps):
+        res = client.post("/records", json={**SAMPLE_RECORD, "steps": steps}, headers={"X-User-Id": "alice"})
+        return res.json()["steps_grade"]
+
+    assert steps_grade(4999) == "부족"
+    assert steps_grade(5000) == "적정"
+    assert steps_grade(9999) == "적정"
+    assert steps_grade(10000) == "우수"
+
+
+def test_sleep_category_boundary_values():
+    def sleep_category(sleep_hours):
+        res = client.post("/records", json={**SAMPLE_RECORD, "sleep_hours": sleep_hours}, headers={"X-User-Id": "alice"})
+        return res.json()["sleep_category"]
+
+    assert sleep_category(6.9) == "부족"
+    assert sleep_category(7.0) == "적정"
+    assert sleep_category(9.0) == "적정"
+    assert sleep_category(9.1) == "과다"

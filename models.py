@@ -32,6 +32,8 @@ class RecordOut(RecordIn):
     bp_category: str
     sugar_category: str
     warnings: list[str]
+    steps_grade: str
+    sleep_category: str
 
 
 class GoalIn(BaseModel):
