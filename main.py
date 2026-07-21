@@ -1,4 +1,5 @@
 from datetime import date as date_type
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -7,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 import logic
 import storage
-from models import RecordIn, RecordOut
+from models import GoalIn, RecordIn, RecordOut
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
@@ -114,7 +115,8 @@ def get_stats(user: str = Depends(get_current_user)) -> dict:
     bp_counts = {c: 0 for c in BP_CATEGORIES}
     sugar_counts = {c: 0 for c in SUGAR_CATEGORIES}
 
-    if not records:
+    averages = logic.calculate_averages(records)
+    if averages is None:
         return {
             "count": 0,
             "avg_weight": None,
@@ -127,21 +129,67 @@ def get_stats(user: str = Depends(get_current_user)) -> dict:
             "sugar_category_counts": sugar_counts,
         }
 
-    enriched = [logic.enrich_record(r) for r in records]
-    count = len(enriched)
-    for r in enriched:
-        bmi_counts[r["bmi_category"]] += 1
-        bp_counts[r["bp_category"]] += 1
-        sugar_counts[r["sugar_category"]] += 1
+    for r in records:
+        enriched = logic.enrich_record(r)
+        bmi_counts[enriched["bmi_category"]] += 1
+        bp_counts[enriched["bp_category"]] += 1
+        sugar_counts[enriched["sugar_category"]] += 1
 
     return {
-        "count": count,
-        "avg_weight": round(sum(r["weight"] for r in enriched) / count, 1),
-        "avg_bmi": round(sum(r["bmi"] for r in enriched) / count, 1),
-        "avg_systolic": round(sum(r["systolic"] for r in enriched) / count, 1),
-        "avg_diastolic": round(sum(r["diastolic"] for r in enriched) / count, 1),
-        "avg_blood_sugar": round(sum(r["blood_sugar"] for r in enriched) / count, 1),
+        **averages,
         "bmi_category_counts": bmi_counts,
         "bp_category_counts": bp_counts,
         "sugar_category_counts": sugar_counts,
+    }
+
+
+@app.put("/goal")
+def set_goal(goal: GoalIn, user: str = Depends(get_current_user)) -> dict:
+    stored_goal = {
+        "target_weight": goal.target_weight,
+        "target_systolic": goal.target_systolic,
+        "target_diastolic": goal.target_diastolic,
+        "set_date": date_type.today().isoformat(),
+    }
+    storage.set_goal(user, stored_goal)
+    return {"goal": stored_goal}
+
+
+@app.get("/goal")
+def get_goal(user: str = Depends(get_current_user)) -> dict:
+    goal = storage.get_goal(user)
+    if goal is None:
+        return {"goal": None}
+    records = storage.get_records(user)
+    achievement = logic.calculate_goal_achievement(goal, records)
+    return {"goal": goal, "achievement": achievement}
+
+
+@app.get("/reports/weekly")
+def get_weekly_report(user: str = Depends(get_current_user)) -> dict:
+    records = storage.get_records(user)
+    today = date_type.today()
+    this_week_start = (today - timedelta(days=7)).isoformat()
+    last_week_start = (today - timedelta(days=14)).isoformat()
+
+    this_week = [r for r in records if r["date"] >= this_week_start]
+    last_week = [r for r in records if last_week_start <= r["date"] < this_week_start]
+
+    this_week_avg = logic.calculate_averages(this_week)
+    last_week_avg = logic.calculate_averages(last_week)
+
+    delta = None
+    if this_week_avg is not None and last_week_avg is not None:
+        delta = {
+            "weight": round(this_week_avg["avg_weight"] - last_week_avg["avg_weight"], 1),
+            "bmi": round(this_week_avg["avg_bmi"] - last_week_avg["avg_bmi"], 1),
+            "systolic": round(this_week_avg["avg_systolic"] - last_week_avg["avg_systolic"], 1),
+            "diastolic": round(this_week_avg["avg_diastolic"] - last_week_avg["avg_diastolic"], 1),
+            "blood_sugar": round(this_week_avg["avg_blood_sugar"] - last_week_avg["avg_blood_sugar"], 1),
+        }
+
+    return {
+        "this_week": this_week_avg,
+        "last_week": last_week_avg,
+        "delta": delta,
     }

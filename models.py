@@ -32,3 +32,9 @@ class RecordOut(RecordIn):
     bp_category: str
     sugar_category: str
     warnings: list[str]
+
+
+class GoalIn(BaseModel):
+    target_weight: float
+    target_systolic: int
+    target_diastolic: int

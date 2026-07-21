@@ -6,7 +6,7 @@ DATA_FILE = Path(__file__).parent / "data.json"
 
 
 def _empty_data() -> dict[str, Any]:
-    return {"next_id": 1, "records": []}
+    return {"next_id": 1, "records": [], "goals": {}}
 
 
 def load_data() -> dict[str, Any]:
@@ -68,3 +68,16 @@ def delete_record(record_id: int) -> bool:
 
 def check_ownership(record: dict[str, Any], user: str) -> bool:
     return user == "admin" or record["user"] == user
+
+
+def get_goal(user: str) -> dict[str, Any] | None:
+    data = load_data()
+    return data.get("goals", {}).get(user)
+
+
+def set_goal(user: str, goal: dict[str, Any]) -> dict[str, Any]:
+    data = load_data()
+    data.setdefault("goals", {})
+    data["goals"][user] = goal
+    save_data(data)
+    return goal

@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -239,3 +241,120 @@ def test_root_serves_html_page():
     res = client.get("/")
     assert res.status_code == 200
     assert "text/html" in res.headers["content-type"]
+
+
+GOAL_PAYLOAD = {"target_weight": 65, "target_systolic": 120, "target_diastolic": 80}
+
+
+def test_get_goal_returns_null_when_not_set():
+    res = client.get("/goal", headers={"X-User-Id": "alice"})
+    assert res.json() == {"goal": None}
+
+
+def test_set_goal_returns_stored_goal():
+    res = client.put("/goal", json=GOAL_PAYLOAD, headers={"X-User-Id": "alice"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["goal"]["target_weight"] == 65
+    assert body["goal"]["target_systolic"] == 120
+    assert body["goal"]["target_diastolic"] == 80
+    assert body["goal"]["set_date"] == date.today().isoformat()
+
+
+def test_goal_achievement_none_without_records_since_goal_set():
+    client.put("/goal", json=GOAL_PAYLOAD, headers={"X-User-Id": "alice"})
+    res = client.get("/goal", headers={"X-User-Id": "alice"})
+    assert res.json()["achievement"] is None
+
+
+def test_goal_achievement_calculated_from_records_since_goal_set():
+    client.put("/goal", json=GOAL_PAYLOAD, headers={"X-User-Id": "alice"})
+    today_str = date.today().isoformat()
+    tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
+
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 70, "systolic": 130, "diastolic": 90},
+        headers={"X-User-Id": "alice"},
+    )
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": tomorrow_str, "weight": 67, "systolic": 125, "diastolic": 85},
+        headers={"X-User-Id": "alice"},
+    )
+
+    res = client.get("/goal", headers={"X-User-Id": "alice"})
+    achievement = res.json()["achievement"]
+    assert achievement["weight_percent"] == 60.0
+    assert achievement["systolic_percent"] == 50.0
+    assert achievement["diastolic_percent"] == 50.0
+
+
+def test_goal_achievement_clamped_at_100_when_exceeded():
+    client.put("/goal", json=GOAL_PAYLOAD, headers={"X-User-Id": "alice"})
+    today_str = date.today().isoformat()
+    tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
+
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 70, "systolic": 130, "diastolic": 90},
+        headers={"X-User-Id": "alice"},
+    )
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": tomorrow_str, "weight": 50, "systolic": 100, "diastolic": 70},
+        headers={"X-User-Id": "alice"},
+    )
+
+    res = client.get("/goal", headers={"X-User-Id": "alice"})
+    achievement = res.json()["achievement"]
+    assert achievement["weight_percent"] == 100.0
+    assert achievement["systolic_percent"] == 100.0
+    assert achievement["diastolic_percent"] == 100.0
+
+
+def test_goal_scoped_to_user():
+    client.put("/goal", json=GOAL_PAYLOAD, headers={"X-User-Id": "alice"})
+    res = client.get("/goal", headers={"X-User-Id": "bob"})
+    assert res.json() == {"goal": None}
+
+
+def test_weekly_report_empty_returns_nulls():
+    res = client.get("/reports/weekly", headers={"X-User-Id": "alice"})
+    assert res.json() == {"this_week": None, "last_week": None, "delta": None}
+
+
+def test_weekly_report_computes_averages_and_delta():
+    today = date.today()
+    this_week_dates = [today - timedelta(days=1), today - timedelta(days=3)]
+    last_week_dates = [today - timedelta(days=8), today - timedelta(days=10)]
+
+    for record_date, weight in zip(this_week_dates, [70, 72]):
+        client.post(
+            "/records",
+            json={**SAMPLE_RECORD, "date": record_date.isoformat(), "weight": weight},
+            headers={"X-User-Id": "alice"},
+        )
+    for record_date, weight in zip(last_week_dates, [75, 77]):
+        client.post(
+            "/records",
+            json={**SAMPLE_RECORD, "date": record_date.isoformat(), "weight": weight},
+            headers={"X-User-Id": "alice"},
+        )
+
+    res = client.get("/reports/weekly", headers={"X-User-Id": "alice"})
+    body = res.json()
+    assert body["this_week"]["count"] == 2
+    assert body["this_week"]["avg_weight"] == 71.0
+    assert body["last_week"]["count"] == 2
+    assert body["last_week"]["avg_weight"] == 76.0
+    assert body["delta"]["weight"] == -5.0
+
+
+def test_weekly_report_scoped_to_user():
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+    client.post("/records", json={**SAMPLE_RECORD, "date": yesterday_str}, headers={"X-User-Id": "alice"})
+    client.post("/records", json={**SAMPLE_RECORD, "date": yesterday_str}, headers={"X-User-Id": "bob"})
+
+    res = client.get("/reports/weekly", headers={"X-User-Id": "alice"})
+    assert res.json()["this_week"]["count"] == 1

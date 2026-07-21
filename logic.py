@@ -57,3 +57,42 @@ def enrich_record(record: dict[str, Any]) -> dict[str, Any]:
         "sugar_category": sugar_category,
         "warnings": warnings,
     }
+
+
+def clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def calculate_averages(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not records:
+        return None
+    enriched = [enrich_record(r) for r in records]
+    count = len(enriched)
+    return {
+        "count": count,
+        "avg_weight": round(sum(r["weight"] for r in enriched) / count, 1),
+        "avg_bmi": round(sum(r["bmi"] for r in enriched) / count, 1),
+        "avg_systolic": round(sum(r["systolic"] for r in enriched) / count, 1),
+        "avg_diastolic": round(sum(r["diastolic"] for r in enriched) / count, 1),
+        "avg_blood_sugar": round(sum(r["blood_sugar"] for r in enriched) / count, 1),
+    }
+
+
+def calculate_achievement_percent(start: float, current: float, target: float) -> float:
+    if start == target:
+        return 100.0
+    percent = (start - current) / (start - target) * 100
+    return round(clamp(percent, 0, 100), 1)
+
+
+def calculate_goal_achievement(goal: dict[str, Any], records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    relevant = sorted((r for r in records if r["date"] >= goal["set_date"]), key=lambda r: r["date"])
+    if not relevant:
+        return None
+    start = relevant[0]
+    current = relevant[-1]
+    return {
+        "weight_percent": calculate_achievement_percent(start["weight"], current["weight"], goal["target_weight"]),
+        "systolic_percent": calculate_achievement_percent(start["systolic"], current["systolic"], goal["target_systolic"]),
+        "diastolic_percent": calculate_achievement_percent(start["diastolic"], current["diastolic"], goal["target_diastolic"]),
+    }
