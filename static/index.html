@@ -81,6 +81,26 @@
     <tbody id="record-list"></tbody>
   </table>
 
+  <h2>목표 관리</h2>
+  <form id="goal-form">
+    <label>목표 체중(kg)
+      <input type="number" step="0.1" name="target_weight" required />
+    </label>
+    <label>목표 수축기 혈압
+      <input type="number" name="target_systolic" required />
+    </label>
+    <label>목표 이완기 혈압
+      <input type="number" name="target_diastolic" required />
+    </label>
+    <div class="form-actions">
+      <button type="submit">목표 저장</button>
+    </div>
+  </form>
+  <div id="goal-display"></div>
+
+  <h2>주간 리포트</h2>
+  <div id="weekly-report"></div>
+
 <script>
 let editingId = null;
 
@@ -237,11 +257,94 @@ async function submitForm(event) {
   await loadRecords();
 }
 
-document.getElementById("reload-btn").addEventListener("click", loadRecords);
+async function loadGoal() {
+  const res = await fetch("/goal", { headers: { "X-User-Id": getCurrentUser() } });
+  const data = await res.json();
+  const el = document.getElementById("goal-display");
+
+  if (!data.goal) {
+    el.textContent = "설정된 목표가 없습니다.";
+    return;
+  }
+
+  const g = data.goal;
+  const a = data.achievement;
+  let html = `목표: 체중 ${g.target_weight}kg / 수축기 ${g.target_systolic} / 이완기 ${g.target_diastolic} (설정일: ${g.set_date})`;
+  if (a) {
+    html += `<br>달성률 — 체중 ${a.weight_percent}% · 수축기 ${a.systolic_percent}% · 이완기 ${a.diastolic_percent}%`;
+  } else {
+    html += `<br>달성률 계산 불가 (설정일 이후 기록이 없어요)`;
+  }
+  el.innerHTML = html;
+}
+
+async function submitGoal(event) {
+  event.preventDefault();
+  clearError();
+
+  const form = event.target;
+  const payload = {
+    target_weight: parseFloat(form.target_weight.value),
+    target_systolic: parseInt(form.target_systolic.value, 10),
+    target_diastolic: parseInt(form.target_diastolic.value, 10),
+  };
+
+  const res = await fetch("/goal", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-User-Id": getCurrentUser() },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    showError(res.status, await res.json());
+    return;
+  }
+
+  form.reset();
+  await loadGoal();
+}
+
+async function loadWeeklyReport() {
+  const res = await fetch("/reports/weekly", { headers: { "X-User-Id": getCurrentUser() } });
+  const data = await res.json();
+  const el = document.getElementById("weekly-report");
+
+  if (!data.this_week || !data.last_week) {
+    el.textContent = "비교할 데이터가 부족합니다 (최근 14일 기록이 필요해요).";
+    return;
+  }
+
+  const fields = [
+    ["weight", "몸무게"],
+    ["bmi", "BMI"],
+    ["systolic", "수축기"],
+    ["diastolic", "이완기"],
+    ["blood_sugar", "혈당"],
+  ];
+  let rows = "";
+  for (const [key, label] of fields) {
+    rows += `<tr><td>${label}</td><td>${data.this_week["avg_" + key]}</td><td>${data.last_week["avg_" + key]}</td><td>${data.delta[key]}</td></tr>`;
+  }
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>항목</th><th>이번주 평균</th><th>지난주 평균</th><th>증감</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function loadAll() {
+  loadRecords();
+  loadGoal();
+  loadWeeklyReport();
+}
+
+document.getElementById("reload-btn").addEventListener("click", loadAll);
 document.getElementById("cancel-btn").addEventListener("click", cancelEdit);
 document.getElementById("record-form").addEventListener("submit", submitForm);
+document.getElementById("goal-form").addEventListener("submit", submitGoal);
 
-loadRecords();
+loadAll();
 </script>
 </body>
 </html>
