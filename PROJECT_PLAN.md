@@ -51,13 +51,16 @@ health-log-api/
 ├── logic.py              # BMI 계산 · 분류 · 경고 생성 함수
 ├── storage.py             # data.json 읽기/쓰기, next_id 관리, 소유권 체크
 ├── static/
-│   └── index.html          # 간단 화면 (입력 폼 + 목록 조회)
+│   └── index.html          # 간단 화면 (입력 폼 + 목록 조회 + 수정/삭제)
+├── scripts/
+│   └── seed_data.py         # 개발용 테스트 데이터 자동 생성 스크립트 (15장 참고)
 ├── tests/
 │   └── test_records.py      # pytest 자동 테스트
 ├── data.json                 # 런타임 생성 (.gitignore 처리)
 ├── requirements.txt
+├── requirements-dev.txt        # 개발 도구 전용 의존성 (예: requests/httpx for seed_data.py)
 ├── Dockerfile
-├── .dockerignore
+├── .dockerignore               # scripts/ 포함, 이미지에서 제외
 ├── .gitignore
 └── README.md
 ```
@@ -292,10 +295,10 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 - **파일**: `static/index.html` 단일 파일, 프레임워크 없이 순수 HTML + JS
 - **API 호출**: `fetch()`로 백엔드 API 호출 (같은 출처이므로 CORS 설정 불필요)
 - **라우팅**: `GET /`가 이 파일을 반환하도록 `main.py`에서 처리. 기존 API 상태 메시지는 `/api`로 이동.
-- **기능 범위 (1차)**:
+- **기능 범위**:
   - 기록 입력 폼 (date, weight, height, systolic, diastolic, blood_sugar, steps, sleep_hours, memo)
   - 목록 조회 (제출 시 `X-User-Id` 헤더 포함 — 간단한 입력창으로 사용자 전환 가능하게)
-- **확장 (시간 남으면)**: 수정/삭제 버튼 추가
+  - 기록 수정/삭제 (목록의 각 행에 [수정]/[삭제] 버튼, 입력 폼을 수정 모드로 재사용) — 더 이상 선택 항목이 아닌 필수 범위. 상세 설계는 16장 참고.
 
 ---
 
@@ -410,3 +413,45 @@ Claude Code와 작업할 때 아래 원칙을 따른다.
 5. **테스트 우선 확인**: 기능 구현 후 해당 pytest 케이스도 함께 작성/실행해서 통과 여부 확인.
 6. **본인 작성 원칙**: 참고 자료를 활용했다면 README에 명시.
 7. 이 문서를 프로젝트 루트에 `PROJECT_PLAN.md`로 두고, 필요 시 핵심 규칙(폴더 구조, 데이터 모델, 권한 정책)만 요약한 `CLAUDE.md`를 별도로 만들어 Claude Code가 매 세션 자동 참고하게 하는 것을 권장.
+
+---
+
+> **추가 기능 (2026-07-21 추가)**: Day 1~4 완료 후 아래 두 기능을 추가로 확정했다. 15장은 개발 편의 도구, 16장은 8장 화면 명세의 필수 확장 기능이다.
+
+## 15. 개발 편의 도구 — 테스트 데이터 자동 생성 (`seed_data.py`)
+
+**목적**: 화면·통계·분류 기능 확인용 기록을 실행 중인 서버에 실제 API 요청(`POST /records`)으로 자동 생성한다. `data.json`에 직접 쓰지 않고 API를 호출해 Pydantic 검증·BMI 계산·권한 로직까지 실제 플로우로 검증한다.
+
+**파일 위치**: `scripts/seed_data.py` (운영 코드·Docker 이미지와 무관하므로 `.dockerignore`에 `scripts/` 추가)
+
+**핵심 원칙**: 완전 랜덤이 아닌 **사용자별 기준값(baseline) + 하루 단위 소폭 랜덤워크 + 전체 구간 상한(cap)** 방식으로 값을 생성해 "일주일 새 20kg 증가" 같은 비현실적인 급변을 막는다. weight/systolic/diastolic/blood_sugar는 baseline 대비 허용 범위와 절대 물리 한계(예: weight 40~150kg)를 함께 둔다. steps/sleep_hours는 매일 정해진 범위(2,000~15,000 / 4.0~9.5) 내 랜덤, height는 고정값이다.
+
+**사용자 프로필**: 분류 기준(정상/주의/위험군)을 골고루 테스트하도록 baseline이 다른 4명(alice=정상, bob=과체중·주의혈압, carol=고혈압 위험군, dave=당뇨 의심 위험군)을 미리 정의한다. `admin`은 데이터를 소유하지 않고 전체 조회 검증용으로만 쓴다.
+
+**실행**: `python scripts/seed_data.py --host <서버 주소> --days <사용자당 생성 일수> --seed <재현용 랜덤 시드>`
+
+**주의사항**:
+- 서버(uvicorn)가 실행 중이어야 동작 (실제 API 호출 방식)
+- 실행 전 `data.json` 초기화 권장 (중복 누적 방지)
+- `requests`/`httpx`는 `requirements-dev.txt`에만 추가하고, 운영용 `requirements.txt`에는 넣지 않는다
+
+---
+
+## 16. 프론트엔드 — 수정/삭제 기능
+
+8장 화면에 기록 수정·삭제를 추가한다(필수 범위). 새 폼을 따로 만들지 않고 **기존 입력 폼을 수정 모드로 재사용**한다.
+
+- 목록의 각 행에 [수정]/[삭제] 버튼 추가
+- 폼 상단에 현재 모드 표시("새 기록 추가" ↔ "기록 수정 중 (#id)"), 수정 모드에서는 제출 버튼 라벨을 "저장"으로 바꾸고 [취소] 버튼 노출
+- 수정 모드 진입 시 폼에 기존 값을 채우고, 제출 시 `PUT /records/{id}` 호출 (생성 모드는 기존대로 `POST /records`)
+- 삭제는 `confirm()`으로 실수 방지 후 `DELETE /records/{id}` 호출
+
+**에러 처리** (9장 정책과 동일하게 화면에 반영):
+
+| 상황 | 상태코드 | 화면 처리 |
+|---|---|---|
+| 없는 기록 수정/삭제 | 404 | "기록을 찾을 수 없어요" |
+| 타인 기록 수정/삭제 | 403 | "본인 기록만 수정/삭제할 수 있어요" |
+| 입력값 검증 실패 | 422 | 문제 필드를 폼 위에 표시 |
+
+에러는 폼 위 고정 배너로 표시하고, 성공 시 자동으로 사라지게 처리한다.
