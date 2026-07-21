@@ -6,3 +6,5 @@ data.json
 .pytest_cache/
 .gitignore
 README.md
+scripts/
+requirements-dev.txt

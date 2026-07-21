@@ -5,7 +5,7 @@
 <title>마이 헬스 로그</title>
 <style>
   html { color-scheme: light; }
-  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #222; background: #fff; }
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #222; background: #fff; }
   h1 { font-size: 1.4rem; }
   h2 { font-size: 1.1rem; margin-top: 2rem; }
   .user-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 1.5rem; }
@@ -14,12 +14,15 @@
   form label { display: flex; flex-direction: column; font-size: 0.85rem; color: #555; }
   form input { padding: 6px 8px; margin-top: 4px; }
   form .full { grid-column: 1 / -1; }
+  .form-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
   button { padding: 8px 16px; cursor: pointer; }
-  #submit-btn { grid-column: 1 / -1; }
+  #submit-btn { flex: 1; }
+  #cancel-btn { display: none; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9rem; }
   th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
   .warn { color: #b00020; font-size: 0.8rem; }
-  #error { color: #b00020; margin-top: 8px; }
+  .row-actions button { padding: 4px 8px; margin-right: 4px; font-size: 0.8rem; }
+  #error-banner { display: none; background: #fdecea; color: #b00020; padding: 8px 12px; border-radius: 4px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -31,7 +34,7 @@
     <button id="reload-btn">목록 새로고침</button>
   </div>
 
-  <h2>기록 추가</h2>
+  <h2 id="form-heading">새 기록 추가</h2>
   <form id="record-form">
     <label class="full">날짜
       <input type="date" name="date" required />
@@ -60,55 +63,150 @@
     <label class="full">메모
       <input type="text" name="memo" />
     </label>
-    <button id="submit-btn" type="submit">저장</button>
+    <div class="form-actions">
+      <button id="submit-btn" type="submit">저장</button>
+      <button id="cancel-btn" type="button">취소</button>
+    </div>
   </form>
-  <div id="error"></div>
+  <div id="error-banner"></div>
 
   <h2>기록 목록</h2>
   <table>
     <thead>
       <tr>
         <th>id</th><th>날짜</th><th>몸무게</th><th>BMI</th><th>BMI 분류</th>
-        <th>혈압</th><th>혈당</th><th>경고</th>
+        <th>혈압</th><th>혈당</th><th>경고</th><th>동작</th>
       </tr>
     </thead>
     <tbody id="record-list"></tbody>
   </table>
 
 <script>
-function currentUser() {
+let editingId = null;
+
+function getCurrentUser() {
   return document.getElementById("user-id").value.trim() || "guest";
 }
 
-async function loadRecords() {
-  const res = await fetch("/records", { headers: { "X-User-Id": currentUser() } });
-  const data = await res.json();
-  const tbody = document.getElementById("record-list");
-  tbody.innerHTML = "";
-  for (const r of data.records) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${r.id}</td>
-      <td>${r.date}</td>
-      <td>${r.weight}</td>
-      <td>${r.bmi}</td>
-      <td>${r.bmi_category}</td>
-      <td>${r.bp_category}</td>
-      <td>${r.sugar_category}</td>
-      <td class="warn">${r.warnings.join(", ")}</td>
-    `;
-    tbody.appendChild(tr);
+function showError(status, body) {
+  const banner = document.getElementById("error-banner");
+  banner.textContent = `${status}: ${JSON.stringify(body.detail)}`;
+  banner.style.display = "block";
+}
+
+function clearError() {
+  const banner = document.getElementById("error-banner");
+  banner.style.display = "none";
+  banner.textContent = "";
+}
+
+function setFormMode(mode, id) {
+  const heading = document.getElementById("form-heading");
+  const submitBtn = document.getElementById("submit-btn");
+  const cancelBtn = document.getElementById("cancel-btn");
+  if (mode === "edit") {
+    heading.textContent = `기록 수정 중 (#${id})`;
+    submitBtn.textContent = "저장";
+    cancelBtn.style.display = "inline-block";
+  } else {
+    heading.textContent = "새 기록 추가";
+    submitBtn.textContent = "저장";
+    cancelBtn.style.display = "none";
   }
 }
 
-document.getElementById("reload-btn").addEventListener("click", loadRecords);
+function fillFormWith(record) {
+  const form = document.getElementById("record-form");
+  form.date.value = record.date;
+  form.weight.value = record.weight;
+  form.height.value = record.height;
+  form.systolic.value = record.systolic;
+  form.diastolic.value = record.diastolic;
+  form.blood_sugar.value = record.blood_sugar;
+  form.steps.value = record.steps;
+  form.sleep_hours.value = record.sleep_hours;
+  form.memo.value = record.memo;
+}
 
-document.getElementById("record-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const errorEl = document.getElementById("error");
-  errorEl.textContent = "";
+function startEdit(record) {
+  editingId = record.id;
+  clearError();
+  fillFormWith(record);
+  setFormMode("edit", record.id);
+}
 
-  const form = e.target;
+function cancelEdit() {
+  editingId = null;
+  document.getElementById("record-form").reset();
+  setFormMode("create");
+}
+
+function renderRecordRow(record) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td>${record.id}</td>
+    <td>${record.date}</td>
+    <td>${record.weight}</td>
+    <td>${record.bmi}</td>
+    <td>${record.bmi_category}</td>
+    <td>${record.bp_category}</td>
+    <td>${record.sugar_category}</td>
+    <td class="warn">${record.warnings.join(", ")}</td>
+  `;
+
+  const actionsTd = document.createElement("td");
+  actionsTd.className = "row-actions";
+
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.textContent = "수정";
+  editBtn.addEventListener("click", () => startEdit(record));
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.textContent = "삭제";
+  deleteBtn.addEventListener("click", () => deleteRecord(record.id));
+
+  actionsTd.appendChild(editBtn);
+  actionsTd.appendChild(deleteBtn);
+  tr.appendChild(actionsTd);
+
+  return tr;
+}
+
+async function loadRecords() {
+  const res = await fetch("/records", { headers: { "X-User-Id": getCurrentUser() } });
+  const data = await res.json();
+  const tbody = document.getElementById("record-list");
+  tbody.innerHTML = "";
+  for (const record of data.records) {
+    tbody.appendChild(renderRecordRow(record));
+  }
+}
+
+async function deleteRecord(id) {
+  if (!confirm("이 기록을 삭제할까요?")) return;
+
+  const res = await fetch(`/records/${id}`, {
+    method: "DELETE",
+    headers: { "X-User-Id": getCurrentUser() },
+  });
+
+  if (!res.ok) {
+    showError(res.status, await res.json());
+    return;
+  }
+
+  clearError();
+  if (editingId === id) cancelEdit();
+  await loadRecords();
+}
+
+async function submitForm(event) {
+  event.preventDefault();
+  clearError();
+
+  const form = event.target;
   const payload = {
     date: form.date.value,
     weight: parseFloat(form.weight.value),
@@ -121,21 +219,27 @@ document.getElementById("record-form").addEventListener("submit", async (e) => {
     memo: form.memo.value,
   };
 
-  const res = await fetch("/records", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-User-Id": currentUser() },
+  const method = editingId ? "PUT" : "POST";
+  const url = editingId ? `/records/${editingId}` : "/records";
+
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json", "X-User-Id": getCurrentUser() },
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
-    const err = await res.json();
-    errorEl.textContent = "저장 실패: " + JSON.stringify(err.detail);
+    showError(res.status, await res.json());
     return;
   }
 
-  form.reset();
+  cancelEdit();
   await loadRecords();
-});
+}
+
+document.getElementById("reload-btn").addEventListener("click", loadRecords);
+document.getElementById("cancel-btn").addEventListener("click", cancelEdit);
+document.getElementById("record-form").addEventListener("submit", submitForm);
 
 loadRecords();
 </script>
