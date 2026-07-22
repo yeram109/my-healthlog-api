@@ -78,8 +78,21 @@ def login(
             detail="아이디 또는 비밀번호가 올바르지 않습니다",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="탈퇴한 계정입니다")
     access_token = auth.create_access_token({"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.delete("/auth/me")
+def delete_account(
+    current_user: User = Depends(auth.get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    current_user.is_active = False
+    session.add(current_user)
+    session.commit()
+    return {"message": "회원 탈퇴가 완료되었습니다"}
 
 
 @app.post("/records", status_code=201, response_model=RecordRead)

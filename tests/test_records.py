@@ -69,6 +69,41 @@ def test_protected_endpoint_with_invalid_token_returns_401(client):
     assert res.status_code == 401
 
 
+def test_delete_account_deactivates_user(client, auth_headers, session):
+    res = client.delete("/auth/me", headers=auth_headers("deleteuser"))
+    assert res.status_code == 200
+
+    user = session.exec(select(User).where(User.username == "deleteuser")).first()
+    assert user.is_active is False
+
+
+def test_delete_account_requires_auth(client):
+    res = client.delete("/auth/me")
+    assert res.status_code == 401
+
+
+def test_deactivated_user_cannot_login(client, auth_headers):
+    client.delete("/auth/me", headers=auth_headers("relogin"))
+    res = client.post("/auth/login", data={"username": "relogin", "password": "testpass123"})
+    assert res.status_code == 403
+
+
+def test_deactivated_user_existing_token_becomes_unauthorized(client, auth_headers):
+    headers = auth_headers("tokenholder")
+    client.delete("/auth/me", headers=headers)
+    res = client.get("/records", headers=headers)
+    assert res.status_code == 401
+
+
+def test_records_preserved_after_account_deletion(client, auth_headers):
+    headers = auth_headers("preserveduser")
+    client.post("/records", json=SAMPLE_RECORD, headers=headers)
+    client.delete("/auth/me", headers=headers)
+
+    res = client.get("/records", headers=auth_headers("admin", is_admin=True))
+    assert res.json()["count"] == 1
+
+
 def test_create_record_returns_201_with_owner(client, auth_headers, session):
     res = client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("alice"))
     assert res.status_code == 201

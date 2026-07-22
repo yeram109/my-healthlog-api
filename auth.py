@@ -67,6 +67,6 @@ def get_current_user(
 ) -> User:
     username = decode_access_token(token)
     user = session.exec(select(User).where(User.username == username)).first()
-    if user is None:
+    if user is None or not user.is_active:
         raise CREDENTIALS_EXCEPTION
     return user

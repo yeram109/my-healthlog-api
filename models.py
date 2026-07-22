@@ -13,6 +13,7 @@ class User(UserBase, table=True):
     username: str = Field(unique=True, index=True)
     hashed_password: str
     is_admin: bool = False
+    is_active: bool = True
 
 
 class UserCreate(UserBase):

@@ -71,6 +71,7 @@
       <span id="current-username"></span>
       <button id="logout-btn">로그아웃</button>
       <button id="reload-btn">목록 새로고침</button>
+      <button id="delete-account-btn" class="switch-link">회원탈퇴</button>
     </div>
 
     <h2 id="form-heading">새 기록 추가</h2>
@@ -263,6 +264,23 @@ async function handleSignup(event) {
 }
 
 function handleLogout() {
+  showAuth();
+}
+
+async function handleDeleteAccount() {
+  if (!confirm("정말 회원탈퇴 하시겠어요? 로그인은 더 이상 할 수 없습니다.")) return;
+
+  const res = await fetch("/auth/me", {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+
+  if (isUnauthorized(res)) return;
+  if (!res.ok) {
+    showError(res.status, await res.json());
+    return;
+  }
+
   showAuth();
 }
 
@@ -504,6 +522,7 @@ document.getElementById("show-login-btn").addEventListener("click", () => {
 document.getElementById("login-form").addEventListener("submit", handleLogin);
 document.getElementById("signup-form").addEventListener("submit", handleSignup);
 document.getElementById("logout-btn").addEventListener("click", handleLogout);
+document.getElementById("delete-account-btn").addEventListener("click", handleDeleteAccount);
 document.getElementById("reload-btn").addEventListener("click", loadAll);
 document.getElementById("cancel-btn").addEventListener("click", cancelEdit);
 document.getElementById("record-form").addEventListener("submit", submitForm);

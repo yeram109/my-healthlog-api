@@ -438,7 +438,7 @@ pytest + httpx(TestClient)로 `tests/test_records.py`에 아래 시나리오를 
 
 - [ ] 서버가 오류 없이 실행되고 `/docs`가 열린다
 - [ ] `/` 접속 시 간단 화면이 정상 렌더링된다
-- [ ] 14개 엔드포인트(화면 포함, `/auth/signup`·`/auth/login`·`/goal`·`/reports/weekly` 포함)가 모두 동작한다
+- [ ] 15개 엔드포인트(화면 포함, `/auth/signup`·`/auth/login`·`/auth/me`(DELETE)·`/goal`·`/reports/weekly` 포함)가 모두 동작한다
 - [ ] BMI·분류·경고·통계 결과가 기준표대로 올바르다
 - [ ] 로그인한 사용자별 데이터 분리 및 `is_admin` 전체조회가 정상 동작한다
 - [ ] 토큰 없이/잘못된 토큰으로 접근 시 401이 반환된다
@@ -534,13 +534,13 @@ Claude Code와 작업할 때 아래 원칙을 따른다.
 **기술 선택**: 비밀번호 해싱은 `passlib[bcrypt]`, 토큰은 `python-jose[cryptography]`, 로그인 폼 파싱은 `python-multipart`. FastAPI의 `OAuth2PasswordBearer`를 사용해 `/docs`에 Authorize 버튼이 자동으로 생기게 한다. `bcrypt`는 `passlib 1.7.4`와의 호환성 문제(`bcrypt>=4.1`에서 버전 감지 오류) 때문에 `bcrypt==4.0.1`로 고정한다.
 
 **변경된 파일**:
-- `models.py` — `User`(id/username/hashed_password/is_admin) 테이블 추가, `UserCreate`(password만 받고 is_admin은 절대 받지 않음), `UserRead`. `Record.user`(str) → `Record.user_id`(FK), `Goal.user`(str, PK) → `Goal.user_id`(FK, PK)로 변경
+- `models.py` — `User`(id/username/hashed_password/is_admin/is_active) 테이블 추가, `UserCreate`(password만 받고 is_admin·is_active는 절대 받지 않음), `UserRead`. `Record.user`(str) → `Record.user_id`(FK), `Goal.user`(str, PK) → `Goal.user_id`(FK, PK)로 변경
 - `auth.py`(신규) — `hash_password`/`verify_password`/`create_access_token`/`decode_access_token`, 토큰→username→DB 조회 후 `User`를 반환하는 `get_current_user` 의존성. `SECRET_KEY`는 환경변수에서만 읽고 하드코딩된 기본값을 두지 않는다 — 없으면 앱 시작 시점(`lifespan`)에 바로 실패한다.
 - `main.py` — `POST /auth/signup`(중복 username 400), `POST /auth/login`(`OAuth2PasswordRequestForm`, 실패 시 401, 성공 시 `{access_token, token_type}`) 추가. 기존 모든 라우터의 `X-User-Id` 기반 의존성을 `Depends(auth.get_current_user)`로 교체, `guest` 기본값 로직 삭제
 - `storage.py` — 소유권 검사·필터링을 `user.id`/`user.is_admin` 기준으로 수정 (매개변수가 문자열 `user`에서 `User` 객체로 바뀜)
 - `scripts/create_admin.py`(신규) — 최초 관리자 계정 생성 CLI (`--username --password`, DB에 직접 `is_admin=True` row 생성). 회원가입 API로는 관리자를 만들 수 없어 이 스크립트가 유일한 경로다.
 - `scripts/seed_data.py`(수정) — 사용자별로 `/auth/signup` → `/auth/login`을 먼저 호출해 토큰을 발급받고, 이후 `Authorization: Bearer` 헤더로 `/records`를 호출하도록 변경. 비밀번호는 스크립트 내 고정값(`SEED_PASSWORD`) 사용
-- `tests/conftest.py` — 사용자 생성 + 토큰 발급을 한 번에 처리하는 `auth_headers(username, is_admin=False)` fixture 추가. 기존 38개 테스트를 전부 `X-User-Id` 헤더 방식에서 `auth_headers`로 전환하고, 회원가입/로그인/인증 실패 케이스 7건을 신규 추가(총 45건)
+- `tests/conftest.py` — 사용자 생성 + 토큰 발급을 한 번에 처리하는 `auth_headers(username, is_admin=False)` fixture 추가. 기존 38개 테스트를 전부 `X-User-Id` 헤더 방식에서 `auth_headers`로 전환하고, 회원가입/로그인/인증 실패/회원탈퇴 케이스 12건을 신규 추가(총 50건)
 - `static/index.html` — 로그인/회원가입 폼, `localStorage`에 토큰 저장, 이후 모든 fetch에 `Authorization: Bearer` 부착. `/auth/login`만 `application/x-www-form-urlencoded`로 전송(`OAuth2PasswordRequestForm` 규격), 나머지는 기존처럼 JSON. 응답이 401이면 토큰을 지우고 로그인 화면으로 전환
 - `requirements.txt` — `passlib[bcrypt]`, `bcrypt==4.0.1`, `python-jose[cryptography]`, `python-multipart` 추가
 - `.env.example`(신규) — `SECRET_KEY=` 키 이름만 포함, 실제 값은 미포함
@@ -552,3 +552,15 @@ Claude Code와 작업할 때 아래 원칙을 따른다.
 **주의사항**:
 - `SECRET_KEY`가 없으면 서버가 첫 요청이 아니라 **시작 시점**에 바로 실패하도록 `lifespan`에서 확인한다 (운영 중 첫 로그인 시도에서야 500이 나는 상황을 방지).
 - Docker로 실행할 때는 반드시 `-e SECRET_KEY=<값>`을 전달해야 한다.
+
+### 18.1 로그아웃 / 회원탈퇴
+
+**로그아웃**: JWT는 stateless라 서버가 세션을 들고 있지 않으므로, 별도 API 없이 화면에서 `localStorage`의 토큰을 지우는 것으로 처리한다(이미 구현됨). 서버 측에서 토큰을 강제로 무효화하려면 블랙리스트 테이블과 매 요청마다 조회하는 오버헤드가 필요해, 현재 규모에서는 채택하지 않는다.
+
+**회원탈퇴**: `User`에 `is_active: bool = True` 필드를 추가하고, `DELETE /auth/me`는 계정을 **비활성화**만 한다(하드 삭제 아님) — 본인 기록/목표는 보존한다.
+
+- `auth.get_current_user`가 `user.is_active`를 함께 확인해서, 탈퇴 직후 아직 만료되지 않은 기존 토큰도 다음 요청부터 즉시 401 처리되게 한다.
+- `POST /auth/login`도 비밀번호가 맞아도 `is_active=False`면 403(`"탈퇴한 계정입니다"`)으로 막는다.
+- `static/index.html`에 "회원탈퇴" 버튼 추가, `confirm()` 확인 후 `DELETE /auth/me` 호출하고 로그아웃과 동일하게 처리한다.
+
+**스키마 변경 주의**: `is_active` 컬럼 추가는 기존 `health_log.db`의 `user` 테이블에는 반영되지 않는다(`SQLModel.metadata.create_all()`은 없는 테이블만 생성하고 기존 테이블의 컬럼은 바꾸지 않음). 17장의 "스키마가 바뀌면 DB를 재생성" 원칙에 따라 DB를 비우고 `create_admin.py` + `seed_data.py`로 재시딩했다.

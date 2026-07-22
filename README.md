@@ -9,7 +9,7 @@
 - 건강 기록 CRUD (`POST`/`GET`/`PUT`/`DELETE /records`)
 - 기록 시 BMI·걸음 수 등급·수면 분류 자동 계산 및 BMI·혈압·혈당 상태 분류
 - 위험 수치 감지 시 조언형 경고 메시지 생성
-- JWT 기반 회원가입/로그인, 로그인한 사용자별 기록 분리 (`is_admin` 계정은 전체 조회/수정/삭제 가능)
+- JWT 기반 회원가입/로그인/회원탈퇴, 로그인한 사용자별 기록 분리 (`is_admin` 계정은 전체 조회/수정/삭제 가능)
 - 기간 검색 (`GET /search`)
 - 통계 조회: 평균값, 카테고리별 카운트 (`GET /stats`)
 - 목표 관리: 목표 체중/혈압 설정 및 달성률 조회 (`PUT`/`GET /goal`)
@@ -98,7 +98,8 @@ python scripts/migrate_json_to_db.py
 | GET | `/` | 화면(HTML) 반환 |
 | GET | `/api` | API 상태 메시지 |
 | POST | `/auth/signup` | 회원가입 (username 중복이면 400) |
-| POST | `/auth/login` | 로그인 (`x-www-form-urlencoded`), 성공 시 `{access_token, token_type}` |
+| POST | `/auth/login` | 로그인 (`x-www-form-urlencoded`), 성공 시 `{access_token, token_type}`. 탈퇴 계정이면 403 |
+| DELETE | `/auth/me` | 회원탈퇴 (계정 비활성화, 기록/목표는 보존). 기존 토큰은 즉시 무효화됨 |
 | POST | `/records` | 기록 추가 (201) |
 | GET | `/records` | 기록 목록 조회 (본인 것만, `is_admin`은 전체) |
 | GET | `/records/{id}` | 기록 단건 조회 (없거나 타인 기록이면 404) |
