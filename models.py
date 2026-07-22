@@ -1,9 +1,10 @@
 from datetime import date as date_type
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
+from sqlmodel import Field, SQLModel
 
 
-class RecordIn(BaseModel):
+class RecordBase(SQLModel):
     date: str
     weight: float
     height: float
@@ -24,7 +25,16 @@ class RecordIn(BaseModel):
         return value
 
 
-class RecordOut(RecordIn):
+class Record(RecordBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    user: str
+
+
+class RecordCreate(RecordBase):
+    pass
+
+
+class RecordRead(RecordBase):
     id: int
     user: str
     bmi: float
@@ -36,7 +46,16 @@ class RecordOut(RecordIn):
     sleep_category: str
 
 
-class GoalIn(BaseModel):
+class GoalBase(SQLModel):
     target_weight: float
     target_systolic: int
     target_diastolic: int
+
+
+class Goal(GoalBase, table=True):
+    user: str = Field(primary_key=True)
+    set_date: str
+
+
+class GoalCreate(GoalBase):
+    pass

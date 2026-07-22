@@ -23,9 +23,9 @@
 |---|---|
 | 언어 | Python 3.12 |
 | 프레임워크 | FastAPI + Uvicorn |
-| 데이터 검증 | Pydantic |
-| 데이터 저장 | JSON 파일 (`data.json`) |
-| 테스트 | pytest + httpx (FastAPI TestClient) |
+| ORM / 데이터 검증 | SQLModel (Pydantic + SQLAlchemy) |
+| 데이터 저장 | SQLite (`health_log.db`) |
+| 테스트 | pytest + httpx (FastAPI TestClient, 인메모리 SQLite) |
 | 배포 | Docker |
 | 프론트엔드 | 순수 HTML + JS |
 
@@ -50,6 +50,12 @@ docker build -t my-healthlog-api .
 docker run -d -p 8000:8000 my-healthlog-api
 ```
 
+컨테이너를 재생성해도 데이터를 유지하려면 `health_log.db`를 호스트에 볼륨으로 마운트한다.
+
+```bash
+docker run -d -p 8000:8000 -v $(pwd)/health_log.db:/app/health_log.db my-healthlog-api
+```
+
 ### 테스트 실행
 
 ```bash
@@ -63,6 +69,14 @@ pytest tests/ -v
 ```bash
 pip install -r requirements-dev.txt
 python scripts/seed_data.py --host http://127.0.0.1:8000 --days 30 --seed 42
+```
+
+### 기존 data.json 이관 (일회성)
+
+과거 JSON 파일 저장 방식을 쓰던 프로젝트를 SQLite로 옮길 때만 필요하다. 서버가 꺼진 상태에서 실행한다.
+
+```bash
+python scripts/migrate_json_to_db.py
 ```
 
 ## API 엔드포인트
@@ -100,17 +114,22 @@ python scripts/seed_data.py --host http://127.0.0.1:8000 --days 30 --seed 42
 
 ```
 health-log-api/
-├── main.py               # FastAPI 앱, 라우터, 정적 파일 마운트
-├── models.py              # Pydantic 모델 (RecordIn, RecordOut, GoalIn)
-├── logic.py                # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
-├── storage.py               # data.json 읽기/쓰기, 소유권 체크, 목표 저장
-├── static/index.html         # 화면 (입력 폼, 목록/수정/삭제, 목표 관리, 주간 리포트)
-├── scripts/seed_data.py        # 개발용 테스트 데이터 자동 생성 스크립트
-├── tests/test_records.py        # pytest 테스트
+├── main.py                      # FastAPI 앱, 라우터, 정적 파일 마운트
+├── models.py                     # SQLModel (Record/Goal 테이블 + Create/Read 스키마)
+├── db.py                          # SQLite 엔진, init_db(), get_session() 의존성
+├── logic.py                        # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
+├── storage.py                       # 세션 기반 CRUD, 소유권 체크, 목표 저장
+├── static/index.html                 # 화면 (입력 폼, 목록/수정/삭제, 목표 관리, 주간 리포트)
+├── scripts/
+│   ├── seed_data.py                    # 개발용 테스트 데이터 자동 생성 스크립트
+│   └── migrate_json_to_db.py             # data.json -> SQLite 1회 이관 스크립트
+├── tests/
+│   ├── conftest.py                        # 인메모리 SQLite + client fixture
+│   └── test_records.py                     # pytest 테스트
 ├── Dockerfile
 ├── requirements.txt
-├── requirements-dev.txt          # seed 스크립트 전용 의존성
-└── PROJECT_PLAN.md                # 상세 기획서
+├── requirements-dev.txt                      # seed 스크립트 전용 의존성
+└── PROJECT_PLAN.md                            # 상세 기획서
 ```
 
 ## 참고 자료

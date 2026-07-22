@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import date as date_type
 from datetime import timedelta
 from pathlib import Path
@@ -5,20 +6,29 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlmodel import Session
 
 import logic
 import storage
-from models import GoalIn, RecordIn, RecordOut
+from db import get_session, init_db
+from models import GoalCreate, RecordCreate, RecordRead
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
 
-app = FastAPI(title="마이 헬스 로그 API")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
 BMI_CATEGORIES = ["저체중", "정상", "과체중", "비만"]
 BP_CATEGORIES = ["정상", "주의", "고혈압"]
 SUGAR_CATEGORIES = ["정상", "공복혈당장애", "당뇨 의심"]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="마이 헬스 로그 API", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def get_current_user(x_user_id: str | None = Header(default=None)) -> str:
@@ -44,46 +54,66 @@ def api_status() -> dict[str, str]:
     return {"message": "마이 헬스 로그 API"}
 
 
-@app.post("/records", status_code=201, response_model=RecordOut)
-def create_record(record: RecordIn, user: str = Depends(get_current_user)) -> dict:
-    stored = storage.add_record(record.model_dump(), user)
-    return logic.enrich_record(stored)
+@app.post("/records", status_code=201, response_model=RecordRead)
+def create_record(
+    record: RecordCreate,
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    stored = storage.add_record(session, record.model_dump(), user)
+    return logic.enrich_record(stored.model_dump())
 
 
 @app.get("/records")
-def list_records(user: str = Depends(get_current_user)) -> dict:
-    records = storage.get_records(user)
-    enriched = [logic.enrich_record(r) for r in records]
+def list_records(
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    records = storage.get_records(session, user)
+    enriched = [logic.enrich_record(r.model_dump()) for r in records]
     return {"count": len(enriched), "records": enriched}
 
 
-@app.get("/records/{record_id}", response_model=RecordOut)
-def get_record(record_id: int, user: str = Depends(get_current_user)) -> dict:
-    record = storage.get_record_by_id(record_id)
+@app.get("/records/{record_id}", response_model=RecordRead)
+def get_record(
+    record_id: int,
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    record = storage.get_record_by_id(session, record_id)
     if record is None or not storage.check_ownership(record, user):
         raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
-    return logic.enrich_record(record)
+    return logic.enrich_record(record.model_dump())
 
 
-@app.put("/records/{record_id}", response_model=RecordOut)
-def replace_record(record_id: int, record: RecordIn, user: str = Depends(get_current_user)) -> dict:
-    existing = storage.get_record_by_id(record_id)
+@app.put("/records/{record_id}", response_model=RecordRead)
+def replace_record(
+    record_id: int,
+    record: RecordCreate,
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    existing = storage.get_record_by_id(session, record_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
     if not storage.check_ownership(existing, user):
         raise HTTPException(status_code=403, detail="본인의 기록만 수정할 수 있습니다")
-    updated = storage.update_record(record_id, record.model_dump())
-    return logic.enrich_record(updated)
+    updated = storage.update_record(session, record_id, record.model_dump())
+    return logic.enrich_record(updated.model_dump())
 
 
 @app.delete("/records/{record_id}")
-def delete_record(record_id: int, user: str = Depends(get_current_user)) -> dict:
-    existing = storage.get_record_by_id(record_id)
+def delete_record(
+    record_id: int,
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    existing = storage.get_record_by_id(session, record_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다")
     if not storage.check_ownership(existing, user):
         raise HTTPException(status_code=403, detail="본인의 기록만 삭제할 수 있습니다")
-    storage.delete_record(record_id)
+    storage.delete_record(session, record_id)
     return {"message": "삭제되었습니다", "deleted_id": record_id}
 
 
@@ -92,25 +122,24 @@ def search_records(
     start: str | None = None,
     end: str | None = None,
     user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
 ) -> dict:
     _validate_date_param(start)
     _validate_date_param(end)
     if start is not None and end is not None and start > end:
         raise HTTPException(status_code=422, detail="start가 end보다 늦을 수 없습니다")
 
-    records = storage.get_records(user)
-    filtered = [
-        r
-        for r in records
-        if (start is None or r["date"] >= start) and (end is None or r["date"] <= end)
-    ]
-    enriched = [logic.enrich_record(r) for r in filtered]
+    records = storage.search_records(session, user, start, end)
+    enriched = [logic.enrich_record(r.model_dump()) for r in records]
     return {"count": len(enriched), "records": enriched}
 
 
 @app.get("/stats")
-def get_stats(user: str = Depends(get_current_user)) -> dict:
-    records = storage.get_records(user)
+def get_stats(
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    records = [r.model_dump() for r in storage.get_records(session, user)]
     bmi_counts = {c: 0 for c in BMI_CATEGORIES}
     bp_counts = {c: 0 for c in BP_CATEGORIES}
     sugar_counts = {c: 0 for c in SUGAR_CATEGORIES}
@@ -144,30 +173,41 @@ def get_stats(user: str = Depends(get_current_user)) -> dict:
 
 
 @app.put("/goal")
-def set_goal(goal: GoalIn, user: str = Depends(get_current_user)) -> dict:
+def set_goal(
+    goal: GoalCreate,
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
     stored_goal = {
         "target_weight": goal.target_weight,
         "target_systolic": goal.target_systolic,
         "target_diastolic": goal.target_diastolic,
         "set_date": date_type.today().isoformat(),
     }
-    storage.set_goal(user, stored_goal)
-    return {"goal": stored_goal}
+    db_goal = storage.set_goal(session, user, stored_goal)
+    return {"goal": db_goal.model_dump()}
 
 
 @app.get("/goal")
-def get_goal(user: str = Depends(get_current_user)) -> dict:
-    goal = storage.get_goal(user)
+def get_goal(
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    goal = storage.get_goal(session, user)
     if goal is None:
         return {"goal": None}
-    records = storage.get_records(user)
-    achievement = logic.calculate_goal_achievement(goal, records)
-    return {"goal": goal, "achievement": achievement}
+    records = [r.model_dump() for r in storage.get_records(session, user)]
+    goal_dict = goal.model_dump()
+    achievement = logic.calculate_goal_achievement(goal_dict, records)
+    return {"goal": goal_dict, "achievement": achievement}
 
 
 @app.get("/reports/weekly")
-def get_weekly_report(user: str = Depends(get_current_user)) -> dict:
-    records = storage.get_records(user)
+def get_weekly_report(
+    user: str = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    records = [r.model_dump() for r in storage.get_records(session, user)]
     today = date_type.today()
     this_week_start = (today - timedelta(days=7)).isoformat()
     last_week_start = (today - timedelta(days=14)).isoformat()

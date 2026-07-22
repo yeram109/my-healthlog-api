@@ -1,6 +1,7 @@
 venv/
 __pycache__/
 *.pyc
+health_log.db
 data.json
 .git/
 .pytest_cache/
