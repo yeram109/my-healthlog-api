@@ -7,12 +7,15 @@
 ## 기능 목록
 
 - 건강 기록 CRUD (`POST`/`GET`/`PUT`/`DELETE /records`)
-- 기록 시 BMI 자동 계산 및 BMI·혈압·혈당 상태 분류
+- 기록 시 BMI·걸음 수 등급·수면 분류 자동 계산 및 BMI·혈압·혈당 상태 분류
 - 위험 수치 감지 시 조언형 경고 메시지 생성
 - `X-User-Id` 헤더 기반 사용자별 기록 분리 (`admin`은 전체 조회/수정/삭제 가능)
 - 기간 검색 (`GET /search`)
 - 통계 조회: 평균값, 카테고리별 카운트 (`GET /stats`)
-- 순수 HTML/JS 화면 (입력 폼 + 목록 조회)
+- 목표 관리: 목표 체중/혈압 설정 및 달성률 조회 (`PUT`/`GET /goal`)
+- 주간 리포트: 이번주 vs 지난주 평균 비교 (`GET /reports/weekly`)
+- 순수 HTML/JS 화면 (입력 폼, 목록 조회, 수정/삭제, 목표 관리, 주간 리포트)
+- 개발용 테스트 데이터 자동 생성 스크립트 (`scripts/seed_data.py`)
 
 ## 기술 스택
 
@@ -53,6 +56,15 @@ docker run -d -p 8000:8000 my-healthlog-api
 pytest tests/ -v
 ```
 
+### 테스트 데이터 자동 생성 (선택)
+
+서버가 실행 중인 상태에서, 실제 API를 호출해 사용자 4명(alice/bob/carol/dave)의 기록을 자동으로 채워준다.
+
+```bash
+pip install -r requirements-dev.txt
+python scripts/seed_data.py --host http://127.0.0.1:8000 --days 30 --seed 42
+```
+
 ## API 엔드포인트
 
 **공통 헤더**: `X-User-Id` (선택, 기본값 `guest`, `admin`이면 조회 시 전체 사용자 대상)
@@ -68,6 +80,9 @@ pytest tests/ -v
 | DELETE | `/records/{id}` | 기록 삭제 (없으면 404, 타인 기록이면 403) |
 | GET | `/search?start=&end=` | 기간별 검색 (`start > end`면 422) |
 | GET | `/stats` | 통계 (평균, 카테고리별 카운트, 0건이면 null) |
+| PUT | `/goal` | 목표 체중/혈압 설정 |
+| GET | `/goal` | 목표 + 달성률 조회 (목표 없으면 `{"goal": null}`) |
+| GET | `/reports/weekly` | 이번주/지난주 평균과 증감 (데이터 부족 시 null) |
 
 ## 건강 분류 기준
 
@@ -77,19 +92,25 @@ pytest tests/ -v
 
 **공복혈당**: 100 미만 정상 · 100~125 공복혈당장애 · 126 이상 당뇨 의심
 
+**걸음 수**: 5,000 미만 부족 · 5,000~9,999 적정 · 10,000 이상 우수
+
+**수면 시간**: 7시간 미만 부족 · 7~9시간 적정 · 9시간 초과 과다
+
 ## 프로젝트 구조
 
 ```
 health-log-api/
-├── main.py          # FastAPI 앱, 라우터, 정적 파일 마운트
-├── models.py         # Pydantic 모델 (RecordIn, RecordOut)
-├── logic.py           # BMI 계산·분류·경고 생성
-├── storage.py          # data.json 읽기/쓰기, 소유권 체크
-├── static/index.html    # 화면 (입력 폼 + 목록 조회)
-├── tests/test_records.py # pytest 테스트
+├── main.py               # FastAPI 앱, 라우터, 정적 파일 마운트
+├── models.py              # Pydantic 모델 (RecordIn, RecordOut, GoalIn)
+├── logic.py                # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
+├── storage.py               # data.json 읽기/쓰기, 소유권 체크, 목표 저장
+├── static/index.html         # 화면 (입력 폼, 목록/수정/삭제, 목표 관리, 주간 리포트)
+├── scripts/seed_data.py        # 개발용 테스트 데이터 자동 생성 스크립트
+├── tests/test_records.py        # pytest 테스트
 ├── Dockerfile
 ├── requirements.txt
-└── PROJECT_PLAN.md      # 상세 기획서
+├── requirements-dev.txt          # seed 스크립트 전용 의존성
+└── PROJECT_PLAN.md                # 상세 기획서
 ```
 
 ## 참고 자료
