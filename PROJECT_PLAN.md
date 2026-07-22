@@ -23,10 +23,10 @@
 |---|---|
 | 언어 | Python **3.12** (버전 고정, README에 명시) |
 | 프레임워크 | FastAPI + Uvicorn |
-| 데이터 검증 | Pydantic |
-| 데이터 저장 | JSON 파일 (`data.json`) |
+| ORM / 데이터 검증 | SQLModel (Pydantic + SQLAlchemy 통합) — 17장 참고 |
+| 데이터 저장 | SQLite (`health_log.db`) |
 | 가상환경 | venv |
-| 테스트 | pytest + httpx (FastAPI TestClient) |
+| 테스트 | pytest + httpx (FastAPI TestClient, 인메모리 SQLite) |
 | 배포 | Docker (Dockerfile + .dockerignore) |
 | 프론트엔드 | 순수 HTML + JS (프레임워크·빌드 도구 없음, fetch로 API 호출) |
 
@@ -34,7 +34,7 @@
 ```bash
 python3.12 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install fastapi uvicorn pytest httpx
+pip install fastapi uvicorn sqlmodel pytest httpx
 uvicorn main:app --reload
 # http://127.0.0.1:8000/docs 에서 API 테스트
 # http://127.0.0.1:8000/ 에서 화면 확인
@@ -47,20 +47,23 @@ uvicorn main:app --reload
 ```
 health-log-api/
 ├── main.py             # FastAPI 앱 생성, 라우터 정의, 정적 파일 마운트
-├── models.py            # Pydantic 모델 (RecordIn, RecordOut 등)
-├── logic.py              # BMI 계산 · 분류 · 경고 생성 함수
-├── storage.py             # data.json 읽기/쓰기, next_id 관리, 소유권 체크
+├── models.py            # SQLModel (Record/Goal 테이블 + Create/Read 스키마) — 17장 참고
+├── db.py                 # SQLite 엔진, init_db(), get_session() 의존성 (17장 참고)
+├── logic.py                # BMI 계산 · 분류 · 경고 생성 함수
+├── storage.py                # 세션 기반 CRUD, 소유권 체크, 목표 저장
 ├── static/
-│   └── index.html          # 간단 화면 (입력 폼 + 목록 조회 + 수정/삭제)
+│   └── index.html              # 간단 화면 (입력 폼 + 목록 조회 + 수정/삭제)
 ├── scripts/
-│   └── seed_data.py         # 개발용 테스트 데이터 자동 생성 스크립트 (15장 참고)
+│   ├── seed_data.py              # 개발용 테스트 데이터 자동 생성 스크립트 (15장 참고)
+│   └── migrate_json_to_db.py       # data.json -> SQLite 1회 이관 스크립트 (17장 참고)
 ├── tests/
-│   └── test_records.py      # pytest 자동 테스트
-├── data.json                 # 런타임 생성 (.gitignore 처리)
+│   ├── conftest.py                  # 인메모리 SQLite + client fixture
+│   └── test_records.py                # pytest 자동 테스트
+├── health_log.db                       # 런타임 생성 (.gitignore 처리)
 ├── requirements.txt
-├── requirements-dev.txt        # 개발 도구 전용 의존성 (예: requests/httpx for seed_data.py)
+├── requirements-dev.txt                  # 개발 도구 전용 의존성 (예: requests/httpx for seed_data.py)
 ├── Dockerfile
-├── .dockerignore               # scripts/ 포함, 이미지에서 제외
+├── .dockerignore                           # scripts/ 포함, 이미지에서 제외
 ├── .gitignore
 └── README.md
 ```
@@ -86,12 +89,12 @@ health-log-api/
 | memo | str | 메모 | 선택, 기본 "" |
 | user | str | 소유자 태그 | 응답에 자동 포함 (`X-User-Id` 헤더에서 가져옴) |
 
-응답에는 위 필드 + 서버가 **동적 계산**한 `id`, `bmi`, `bmi_category`, `bp_category`, `sugar_category`, `warnings`가 포함된다.
+응답에는 위 필드 + 서버가 **동적 계산**한 `id`, `bmi`, `bmi_category`, `bp_category`, `sugar_category`, `warnings`, `steps_grade`, `sleep_category`가 포함된다.
 
-### 4.2 Pydantic 모델 (개념 정의)
+### 4.2 SQLModel 정의 (개념 정의, 17장 전환 이후 기준)
 
 ```python
-class RecordIn(BaseModel):
+class RecordBase(SQLModel):
     date: str          # YYYY-MM-DD 형식 검증 (validator 또는 date 타입 활용)
     weight: float
     height: float
@@ -102,7 +105,11 @@ class RecordIn(BaseModel):
     sleep_hours: float = 0.0
     memo: str = ""
 
-class RecordOut(RecordIn):
+class Record(RecordBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    user: str
+
+class RecordRead(RecordBase):
     id: int
     user: str
     bmi: float
@@ -110,34 +117,17 @@ class RecordOut(RecordIn):
     bp_category: str
     sugar_category: str
     warnings: list[str]
+    steps_grade: str
+    sleep_category: str
 ```
 
-### 4.3 data.json 저장 구조
+### 4.3 SQLite 저장 구조
 
-```json
-{
-  "next_id": 4,
-  "records": [
-    {
-      "id": 1,
-      "user": "guest",
-      "date": "2026-07-20",
-      "weight": 70.5,
-      "height": 175,
-      "systolic": 118,
-      "diastolic": 76,
-      "blood_sugar": 95,
-      "steps": 8000,
-      "sleep_hours": 7.5,
-      "memo": ""
-    }
-  ]
-}
-```
+`data.json` 단일 파일 대신 SQLite(`health_log.db`)에 `record`, `goal` 두 테이블로 저장한다. 전환 배경과 절차는 17장 참고.
 
 **중요 원칙**:
-- `next_id`를 별도로 관리해 삭제 후에도 id가 재사용되지 않게 한다.
-- `bmi` / `bmi_category` / `bp_category` / `sugar_category` / `warnings`는 **파일에 저장하지 않는다.** 매 요청마다 원본 값(weight, height, systolic, diastolic, blood_sugar)으로부터 `logic.py`에서 동적으로 계산해 응답에 포함한다. (분류 기준이 바뀌어도 기존 데이터가 낡은 값으로 남지 않도록)
+- `id`는 DB의 autoincrement 기본키로 관리한다 (파일 기반 시절의 `next_id` 카운터는 더 이상 불필요).
+- `bmi` / `bmi_category` / `bp_category` / `sugar_category` / `warnings` / `steps_grade` / `sleep_category`는 **DB에 저장하지 않는다.** 매 요청마다 원본 값(weight, height, systolic, diastolic, blood_sugar, steps, sleep_hours)으로부터 `logic.py`에서 동적으로 계산해 응답에 포함한다. (분류 기준이 바뀌어도 기존 데이터가 낡은 값으로 남지 않도록)
 
 ---
 
@@ -429,14 +419,14 @@ pytest + httpx(TestClient)로 `tests/test_records.py`에 아래 시나리오를 
 
 - [ ] 서버가 오류 없이 실행되고 `/docs`가 열린다
 - [ ] `/` 접속 시 간단 화면이 정상 렌더링된다
-- [ ] 9개 엔드포인트(화면 포함)가 모두 동작한다
+- [ ] 12개 엔드포인트(화면 포함, `/goal`·`/reports/weekly` 포함)가 모두 동작한다
 - [ ] BMI·분류·경고·통계 결과가 기준표대로 올바르다
 - [ ] `X-User-Id`별 데이터 분리 및 `admin` 전체조회가 정상 동작한다
 - [ ] 타인 기록 접근 시 404/403이 올바르게 반환된다
-- [ ] 서버를 재시작해도 데이터가 유지된다 (`data.json`)
+- [ ] 서버를 재시작해도 데이터가 유지된다 (`health_log.db`)
 - [ ] pytest 테스트가 모두 통과한다
 - [ ] `docker build` · `docker run`이 성공한다
-- [ ] 저장소에 `venv`·`data.json`이 올라가지 않았다 (`.gitignore` 확인)
+- [ ] 저장소에 `venv`·`health_log.db`가 올라가지 않았다 (`.gitignore` 확인)
 - [ ] README가 필수 항목(소개/기능목록/실행법/기술스택)을 모두 포함한다
 - [ ] 최종 코드가 push됐고, 저장소가 Public이다
 
@@ -495,3 +485,21 @@ Claude Code와 작업할 때 아래 원칙을 따른다.
 | 입력값 검증 실패 | 422 | 문제 필드를 폼 위에 표시 |
 
 에러는 폼 위 고정 배너로 표시하고, 성공 시 자동으로 사라지게 처리한다.
+
+---
+
+## 17. 저장소 전환 — JSON 파일 → SQLite + SQLModel
+
+**목적**: `data.json` 파일 기반 저장은 동시 요청 시 read-modify-write 과정에서 데이터가 유실될 위험이 있고, 인증 기능을 위한 `users` 테이블 같은 확장 여지도 없다. SQLite + SQLModel로 전환해 두 문제를 해결한다.
+
+**기술 선택**: ORM은 SQLModel(Pydantic + SQLAlchemy 통합, 기존 `models.py`와 중복을 최소화). DB는 SQLite(`health_log.db`, 프로젝트 루트, `.gitignore` 처리). 마이그레이션 도구(Alembic)는 쓰지 않고 `SQLModel.metadata.create_all()`로 스키마를 생성하며, 스키마가 바뀌면 DB를 재생성하는 것을 원칙으로 한다.
+
+**변경된 파일**: `models.py`(SQLModel로 재작성 — 4.2 참고), `db.py`(신규, 엔진·`init_db()`·`get_session()`), `storage.py`(파일 I/O를 세션 기반 CRUD로 전면 교체, `next_id` 카운터 로직 삭제), `main.py`(각 라우터에 `Depends(get_session)` 주입, `lifespan`에서 `init_db()` 호출), `scripts/migrate_json_to_db.py`(신규, 기존 `data.json` 1회 이관), `tests/conftest.py`(신규, 인메모리 SQLite로 `get_session`을 오버라이드하는 `client` fixture).
+
+**유지된 것**: `logic.py`의 BMI/걸음수/수면 계산·분류·경고 생성 로직은 그대로다. 계산값은 여전히 DB에 저장하지 않고 응답 시점에 동적으로 계산한다(4.3 참고). 소유권 검사(`check_ownership`)의 원리도 동일하며, 비교 대상만 dict에서 `Record` 객체 속성으로 바뀌었다.
+
+**개선된 부분**: `/search`는 파이썬 필터링 대신 SQL `WHERE date BETWEEN` 쿼리(`storage.search_records`)로 대체했다. 동시 쓰기 요청은 SQLite 트랜잭션으로 직렬화되어 파일 기반 저장의 데이터 유실 위험이 사라졌다.
+
+**이관 절차**: 서버를 끈 상태에서 `python scripts/migrate_json_to_db.py`를 1회 실행한다. `data.json`의 `records`뿐 아니라 `goals`도 함께 이관한다 — 같은 파일에 있던 데이터라 하나만 옮기면 목표만 파일에 남는 어중간한 상태가 되기 때문에, `Goal(table=True)` 모델을 추가해 함께 이관하도록 범위를 넓혔다.
+
+**Docker**: 컨테이너를 재생성해도 데이터를 유지하려면 `health_log.db`를 호스트에 볼륨 마운트한다: `docker run -d -p 8000:8000 -v $(pwd)/health_log.db:/app/health_log.db my-healthlog-api`
