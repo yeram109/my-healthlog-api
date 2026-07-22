@@ -30,6 +30,7 @@ SUGAR_DAILY_DELTA, SUGAR_RANGE, SUGAR_ABS = 5, 20, (70, 200)
 STEPS_RANGE = (2000, 15000)
 SLEEP_RANGE = (4.0, 9.5)
 SAMPLE_MEMOS = ["운동 다녀옴", "야근해서 늦게 잠", "물 많이 마심", "컨디션 좋음", "짠 음식 많이 먹음", ""]
+SEED_PASSWORD = "seed-pass-1234"
 
 
 def clamp(value: float, lo: float, hi: float) -> float:
@@ -83,12 +84,24 @@ def generate_user_records(user: UserProfile, days: int, today: date) -> list[dic
     return records
 
 
+def get_token(client: httpx.Client, username: str, password: str) -> str:
+    signup_res = client.post("/auth/signup", json={"username": username, "password": password})
+    if signup_res.status_code not in (201, 400):
+        signup_res.raise_for_status()
+
+    login_res = client.post("/auth/login", data={"username": username, "password": password})
+    login_res.raise_for_status()
+    return login_res.json()["access_token"]
+
+
 def seed(host: str, days: int) -> None:
     with httpx.Client(base_url=host, timeout=10.0) as client:
         for user in USER_PROFILES:
+            token = get_token(client, user.name, SEED_PASSWORD)
+            headers = {"Authorization": f"Bearer {token}"}
             records = generate_user_records(user, days, date.today())
             for record in records:
-                response = client.post("/records", json=record, headers={"X-User-Id": user.name})
+                response = client.post("/records", json=record, headers=headers)
                 response.raise_for_status()
             print(f"{user.name}: {len(records)}건 생성")
 

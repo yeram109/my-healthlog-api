@@ -9,7 +9,7 @@
 - 건강 기록 CRUD (`POST`/`GET`/`PUT`/`DELETE /records`)
 - 기록 시 BMI·걸음 수 등급·수면 분류 자동 계산 및 BMI·혈압·혈당 상태 분류
 - 위험 수치 감지 시 조언형 경고 메시지 생성
-- `X-User-Id` 헤더 기반 사용자별 기록 분리 (`admin`은 전체 조회/수정/삭제 가능)
+- JWT 기반 회원가입/로그인, 로그인한 사용자별 기록 분리 (`is_admin` 계정은 전체 조회/수정/삭제 가능)
 - 기간 검색 (`GET /search`)
 - 통계 조회: 평균값, 카테고리별 카운트 (`GET /stats`)
 - 목표 관리: 목표 체중/혈압 설정 및 달성률 조회 (`PUT`/`GET /goal`)
@@ -25,6 +25,7 @@
 | 프레임워크 | FastAPI + Uvicorn |
 | ORM / 데이터 검증 | SQLModel (Pydantic + SQLAlchemy) |
 | 데이터 저장 | SQLite (`health_log.db`) |
+| 인증 | JWT (python-jose) + bcrypt 해싱(passlib), `OAuth2PasswordBearer` |
 | 테스트 | pytest + httpx (FastAPI TestClient, 인메모리 SQLite) |
 | 배포 | Docker |
 | 프론트엔드 | 순수 HTML + JS |
@@ -37,23 +38,32 @@
 python3.12 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+export SECRET_KEY=<임의의 긴 랜덤 문자열>   # .env.example 참고, 없으면 서버가 시작 시점에 바로 실패한다
 uvicorn main:app --reload
 ```
 
-- API 문서: http://127.0.0.1:8000/docs
-- 화면: http://127.0.0.1:8000/
+- API 문서: http://127.0.0.1:8000/docs (우측 상단 **Authorize** 버튼으로 토큰 인증)
+- 화면: http://127.0.0.1:8000/ (첫 화면은 로그인/회원가입)
+
+### 관리자 계정 생성
+
+일반 회원가입(`/auth/signup`)으로는 `is_admin` 계정을 만들 수 없다. 최초 관리자는 CLI로 생성한다.
+
+```bash
+python scripts/create_admin.py --username admin --password <비밀번호>
+```
 
 ### Docker 실행
 
 ```bash
 docker build -t my-healthlog-api .
-docker run -d -p 8000:8000 my-healthlog-api
+docker run -d -p 8000:8000 -e SECRET_KEY=<임의의 긴 랜덤 문자열> my-healthlog-api
 ```
 
 컨테이너를 재생성해도 데이터를 유지하려면 `health_log.db`를 호스트에 볼륨으로 마운트한다.
 
 ```bash
-docker run -d -p 8000:8000 -v $(pwd)/health_log.db:/app/health_log.db my-healthlog-api
+docker run -d -p 8000:8000 -e SECRET_KEY=<값> -v $(pwd)/health_log.db:/app/health_log.db my-healthlog-api
 ```
 
 ### 테스트 실행
@@ -64,7 +74,7 @@ pytest tests/ -v
 
 ### 테스트 데이터 자동 생성 (선택)
 
-서버가 실행 중인 상태에서, 실제 API를 호출해 사용자 4명(alice/bob/carol/dave)의 기록을 자동으로 채워준다.
+서버가 실행 중인 상태에서, 사용자 4명(alice/bob/carol/dave)을 자동으로 회원가입·로그인시킨 뒤 실제 API를 호출해 기록을 채워준다(비밀번호는 스크립트 내 `SEED_PASSWORD` 고정값).
 
 ```bash
 pip install -r requirements-dev.txt
@@ -81,14 +91,16 @@ python scripts/migrate_json_to_db.py
 
 ## API 엔드포인트
 
-**공통 헤더**: `X-User-Id` (선택, 기본값 `guest`, `admin`이면 조회 시 전체 사용자 대상)
+**인증**: `/auth/signup`, `/auth/login`, `/`, `/api`를 제외한 모든 엔드포인트는 `Authorization: Bearer <token>` 헤더가 필요하다(없거나 유효하지 않으면 401). `is_admin` 계정은 조회/수정/삭제 시 전체 사용자 대상.
 
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/` | 화면(HTML) 반환 |
 | GET | `/api` | API 상태 메시지 |
+| POST | `/auth/signup` | 회원가입 (username 중복이면 400) |
+| POST | `/auth/login` | 로그인 (`x-www-form-urlencoded`), 성공 시 `{access_token, token_type}` |
 | POST | `/records` | 기록 추가 (201) |
-| GET | `/records` | 기록 목록 조회 (본인 것만, `admin`은 전체) |
+| GET | `/records` | 기록 목록 조회 (본인 것만, `is_admin`은 전체) |
 | GET | `/records/{id}` | 기록 단건 조회 (없거나 타인 기록이면 404) |
 | PUT | `/records/{id}` | 기록 수정 (없으면 404, 타인 기록이면 403) |
 | DELETE | `/records/{id}` | 기록 삭제 (없으면 404, 타인 기록이면 403) |
@@ -115,21 +127,24 @@ python scripts/migrate_json_to_db.py
 ```
 health-log-api/
 ├── main.py                      # FastAPI 앱, 라우터, 정적 파일 마운트
-├── models.py                     # SQLModel (Record/Goal 테이블 + Create/Read 스키마)
-├── db.py                          # SQLite 엔진, init_db(), get_session() 의존성
-├── logic.py                        # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
-├── storage.py                       # 세션 기반 CRUD, 소유권 체크, 목표 저장
-├── static/index.html                 # 화면 (입력 폼, 목록/수정/삭제, 목표 관리, 주간 리포트)
+├── auth.py                       # 비밀번호 해싱, JWT 발급/검증, get_current_user 의존성
+├── models.py                      # SQLModel (User/Record/Goal 테이블 + Create/Read 스키마)
+├── db.py                           # SQLite 엔진, init_db(), get_session() 의존성
+├── logic.py                         # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
+├── storage.py                        # 세션 기반 CRUD, 소유권 체크, 목표 저장
+├── static/index.html                  # 화면 (로그인/회원가입, 입력 폼, 목록/수정/삭제, 목표 관리, 주간 리포트)
 ├── scripts/
-│   ├── seed_data.py                    # 개발용 테스트 데이터 자동 생성 스크립트
-│   └── migrate_json_to_db.py             # data.json -> SQLite 1회 이관 스크립트
+│   ├── seed_data.py                     # 개발용 테스트 데이터 자동 생성 스크립트 (회원가입+로그인 포함)
+│   ├── create_admin.py                    # 최초 관리자 계정 생성 CLI
+│   └── migrate_json_to_db.py                # (레거시) data.json -> SQLite 1회 이관 스크립트
 ├── tests/
-│   ├── conftest.py                        # 인메모리 SQLite + client fixture
-│   └── test_records.py                     # pytest 테스트
+│   ├── conftest.py                         # 인메모리 SQLite + client/auth_headers fixture
+│   └── test_records.py                      # pytest 테스트
 ├── Dockerfile
 ├── requirements.txt
-├── requirements-dev.txt                      # seed 스크립트 전용 의존성
-└── PROJECT_PLAN.md                            # 상세 기획서
+├── requirements-dev.txt                       # seed 스크립트 전용 의존성
+├── .env.example                                # SECRET_KEY 환경변수 이름 안내
+└── PROJECT_PLAN.md                              # 상세 기획서
 ```
 
 ## 참고 자료

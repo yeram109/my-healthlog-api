@@ -4,6 +4,26 @@ from pydantic import field_validator
 from sqlmodel import Field, SQLModel
 
 
+class UserBase(SQLModel):
+    username: str
+
+
+class User(UserBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    username: str = Field(unique=True, index=True)
+    hashed_password: str
+    is_admin: bool = False
+
+
+class UserCreate(UserBase):
+    password: str
+
+
+class UserRead(UserBase):
+    id: int
+    is_admin: bool
+
+
 class RecordBase(SQLModel):
     date: str
     weight: float
@@ -27,7 +47,7 @@ class RecordBase(SQLModel):
 
 class Record(RecordBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    user: str
+    user_id: int = Field(foreign_key="user.id")
 
 
 class RecordCreate(RecordBase):
@@ -36,7 +56,7 @@ class RecordCreate(RecordBase):
 
 class RecordRead(RecordBase):
     id: int
-    user: str
+    user_id: int
     bmi: float
     bmi_category: str
     bp_category: str
@@ -53,7 +73,7 @@ class GoalBase(SQLModel):
 
 
 class Goal(GoalBase, table=True):
-    user: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
     set_date: str
 
 

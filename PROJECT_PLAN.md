@@ -25,6 +25,7 @@
 | 프레임워크 | FastAPI + Uvicorn |
 | ORM / 데이터 검증 | SQLModel (Pydantic + SQLAlchemy 통합) — 17장 참고 |
 | 데이터 저장 | SQLite (`health_log.db`) |
+| 인증 | JWT(`python-jose`) + bcrypt 해싱(`passlib`), `OAuth2PasswordBearer` — 18장 참고 |
 | 가상환경 | venv |
 | 테스트 | pytest + httpx (FastAPI TestClient, 인메모리 SQLite) |
 | 배포 | Docker (Dockerfile + .dockerignore) |
@@ -34,10 +35,11 @@
 ```bash
 python3.12 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install fastapi uvicorn sqlmodel pytest httpx
+pip install fastapi uvicorn sqlmodel passlib[bcrypt] python-jose[cryptography] python-multipart pytest httpx
+export SECRET_KEY=<임의의 긴 랜덤 문자열>   # 없으면 서버가 시작 시점에 바로 실패한다 (18장 참고)
 uvicorn main:app --reload
-# http://127.0.0.1:8000/docs 에서 API 테스트
-# http://127.0.0.1:8000/ 에서 화면 확인
+# http://127.0.0.1:8000/docs 에서 API 테스트 (Authorize 버튼으로 토큰 인증)
+# http://127.0.0.1:8000/ 에서 화면 확인 (첫 화면은 로그인/회원가입)
 ```
 
 ---
@@ -47,23 +49,26 @@ uvicorn main:app --reload
 ```
 health-log-api/
 ├── main.py             # FastAPI 앱 생성, 라우터 정의, 정적 파일 마운트
-├── models.py            # SQLModel (Record/Goal 테이블 + Create/Read 스키마) — 17장 참고
-├── db.py                 # SQLite 엔진, init_db(), get_session() 의존성 (17장 참고)
-├── logic.py                # BMI 계산 · 분류 · 경고 생성 함수
-├── storage.py                # 세션 기반 CRUD, 소유권 체크, 목표 저장
+├── auth.py              # 비밀번호 해싱, JWT 발급/검증, get_current_user 의존성 (18장 참고)
+├── models.py              # SQLModel (User/Record/Goal 테이블 + Create/Read 스키마) — 17·18장 참고
+├── db.py                   # SQLite 엔진, init_db(), get_session() 의존성 (17장 참고)
+├── logic.py                  # BMI 계산 · 분류 · 경고 생성 함수
+├── storage.py                  # 세션 기반 CRUD, 소유권 체크, 목표 저장
 ├── static/
-│   └── index.html              # 간단 화면 (입력 폼 + 목록 조회 + 수정/삭제)
+│   └── index.html                # 화면 (로그인/회원가입 + 입력 폼 + 목록 조회 + 수정/삭제)
 ├── scripts/
-│   ├── seed_data.py              # 개발용 테스트 데이터 자동 생성 스크립트 (15장 참고)
-│   └── migrate_json_to_db.py       # data.json -> SQLite 1회 이관 스크립트 (17장 참고)
+│   ├── seed_data.py                 # 개발용 테스트 데이터 자동 생성 스크립트 (15·18장 참고)
+│   ├── create_admin.py                # 최초 관리자 계정 생성 CLI (18장 참고)
+│   └── migrate_json_to_db.py            # (레거시) data.json -> SQLite 1회 이관 스크립트 (17장 참고)
 ├── tests/
-│   ├── conftest.py                  # 인메모리 SQLite + client fixture
-│   └── test_records.py                # pytest 자동 테스트
-├── health_log.db                       # 런타임 생성 (.gitignore 처리)
+│   ├── conftest.py                       # 인메모리 SQLite + client/auth_headers fixture
+│   └── test_records.py                     # pytest 자동 테스트
+├── health_log.db                            # 런타임 생성 (.gitignore 처리)
 ├── requirements.txt
-├── requirements-dev.txt                  # 개발 도구 전용 의존성 (예: requests/httpx for seed_data.py)
+├── requirements-dev.txt                       # 개발 도구 전용 의존성 (예: requests/httpx for seed_data.py)
+├── .env.example                                # SECRET_KEY 환경변수 이름 안내
 ├── Dockerfile
-├── .dockerignore                           # scripts/ 포함, 이미지에서 제외
+├── .dockerignore                                 # scripts/ 포함, 이미지에서 제외
 ├── .gitignore
 └── README.md
 ```
@@ -87,13 +92,19 @@ health-log-api/
 | steps | int | 걸음 수 | 선택, 기본 0 |
 | sleep_hours | float | 수면 시간 | 선택, 기본 0.0 |
 | memo | str | 메모 | 선택, 기본 "" |
-| user | str | 소유자 태그 | 응답에 자동 포함 (`X-User-Id` 헤더에서 가져옴) |
+| user_id | int | 소유자 FK (`user.id`) | 응답에 자동 포함 (로그인한 사용자의 id, 18장 참고) |
 
 응답에는 위 필드 + 서버가 **동적 계산**한 `id`, `bmi`, `bmi_category`, `bp_category`, `sugar_category`, `warnings`, `steps_grade`, `sleep_category`가 포함된다.
 
-### 4.2 SQLModel 정의 (개념 정의, 17장 전환 이후 기준)
+### 4.2 SQLModel 정의 (개념 정의, 17·18장 전환 이후 기준)
 
 ```python
+class User(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    username: str = Field(unique=True, index=True)
+    hashed_password: str
+    is_admin: bool = False
+
 class RecordBase(SQLModel):
     date: str          # YYYY-MM-DD 형식 검증 (validator 또는 date 타입 활용)
     weight: float
@@ -107,11 +118,11 @@ class RecordBase(SQLModel):
 
 class Record(RecordBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    user: str
+    user_id: int = Field(foreign_key="user.id")
 
 class RecordRead(RecordBase):
     id: int
-    user: str
+    user_id: int
     bmi: float
     bmi_category: str
     bp_category: str
@@ -123,7 +134,7 @@ class RecordRead(RecordBase):
 
 ### 4.3 SQLite 저장 구조
 
-`data.json` 단일 파일 대신 SQLite(`health_log.db`)에 `record`, `goal` 두 테이블로 저장한다. 전환 배경과 절차는 17장 참고.
+`data.json` 단일 파일 대신 SQLite(`health_log.db`)에 `user`, `record`, `goal` 세 테이블로 저장한다. 전환 배경과 절차는 17장(저장소), 18장(인증) 참고.
 
 **중요 원칙**:
 - `id`는 DB의 autoincrement 기본키로 관리한다 (파일 기반 시절의 `next_id` 카운터는 더 이상 불필요).
@@ -176,24 +187,26 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 
 ## 6. 사용자 구분 & 권한 정책
 
-- **식별 방법**: 모든 요청에 `X-User-Id` 헤더 사용 (인증 없는 단순 태그 방식)
-- **기본값**: 헤더가 없으면 `guest`로 처리
+> 최초에는 `X-User-Id` 헤더 자기신고 방식이었으나, JWT 로그인 기반으로 전환했다. 인증 자체의 구현 상세(토큰 발급/검증, 비밀번호 해싱)는 18장 참고.
+
+- **식별 방법**: 회원가입(`/auth/signup`) 후 로그인(`/auth/login`)해 JWT를 발급받고, 이후 모든 요청에 `Authorization: Bearer <token>` 헤더를 사용한다. 토큰이 없거나 유효하지 않으면 **401**.
+- **관리자 권한**: 문자열 매직값(`admin`)이 아니라 `User.is_admin` 필드로 관리한다. 회원가입으로는 `is_admin`을 설정할 수 없고, `scripts/create_admin.py` CLI로만 부여한다.
 - **조회 범위**:
-  - `GET /records`, `GET /search`, `GET /stats` → 기본적으로 **본인(`X-User-Id`) 기록만** 대상
-  - `X-User-Id: admin`으로 요청하면 → **전체 사용자의 기록**을 대상으로 조회
+  - `GET /records`, `GET /search`, `GET /stats` → 기본적으로 **본인 기록만** 대상
+  - `is_admin` 계정으로 요청하면 → **전체 사용자의 기록**을 대상으로 조회
 - **소유권 검사** (`PUT`/`DELETE /records/{id}`):
   - 기록이 없으면 → 404
-  - 기록은 있지만 요청자의 것이 아니고, 요청자가 `admin`도 아니면 → **403 Forbidden**
-  - `admin`은 항상 모든 기록에 대해 수정/삭제 가능
+  - 기록은 있지만 요청자의 것이 아니고, 요청자가 `is_admin`도 아니면 → **403 Forbidden**
+  - `is_admin` 계정은 항상 모든 기록에 대해 수정/삭제 가능
 - **단건 조회** (`GET /records/{id}`)에서 타인의 기록을 조회하면 → 목록 조회와 일관되게 **404**로 처리 (존재 자체를 숨김)
 
-이 로직은 `storage.py`에 `check_ownership(record, user)` 같은 헬퍼 함수로 구현하고, `main.py`의 각 라우터에서 재사용한다.
+이 로직은 `storage.py`에 `check_ownership(record, user)` 같은 헬퍼 함수로 구현하고, `main.py`의 각 라우터에서 재사용한다. `user`는 이제 문자열이 아니라 `auth.get_current_user` 의존성이 반환하는 `User` 객체다.
 
 ---
 
 ## 7. API 상세 명세
 
-**공통 헤더**: `X-User-Id` (선택, 기본값 `guest`, 값이 `admin`이면 조회 시 전체 사용자 대상)
+**공통 헤더**: `Authorization: Bearer <token>` (`/`, `/api`, `/auth/signup`, `/auth/login` 제외 전부 필수, 없거나 유효하지 않으면 401). `is_admin` 계정이면 조회 시 전체 사용자 대상.
 **공통 에러 포맷**: FastAPI 기본 형식 사용 — `{"detail": "에러 메시지"}`
 
 ### 7.1 `GET /`
@@ -203,6 +216,10 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 ```json
 { "message": "마이 헬스 로그 API" }
 ```
+
+### 7.2a `POST /auth/signup`, `POST /auth/login`
+
+인증 관련 엔드포인트 상세는 18장 참고.
 
 ### 7.3 `POST /records`
 기록 추가. 저장 후 BMI·분류·경고 계산해 응답. **201 Created**
@@ -226,7 +243,7 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 ```json
 {
   "id": 1,
-  "user": "guest",
+  "user_id": 1,
   "date": "2026-07-20",
   "weight": 70.5, "height": 175, "systolic": 118, "diastolic": 76, "blood_sugar": 95,
   "steps": 8000, "sleep_hours": 7.5, "memo": "",
@@ -239,7 +256,7 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 ```
 
 ### 7.4 `GET /records`
-전체 기록 조회 (본인 것만, `admin`은 전체)
+전체 기록 조회 (본인 것만, `is_admin` 계정은 전체)
 ```json
 { "count": 3, "records": [ { "...RecordOut": "..." } ] }
 ```
@@ -248,10 +265,10 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 단건 조회. 없거나 타인 기록이면 **404**.
 
 ### 7.6 `PUT /records/{id}`
-전체 필드 필수 (POST와 동일 바디). 없으면 404, 타인 기록이면 403(`admin` 예외). 응답은 갱신된 `RecordOut`.
+전체 필드 필수 (POST와 동일 바디). 없으면 404, 타인 기록이면 403(`is_admin` 예외). 응답은 갱신된 `RecordRead`.
 
 ### 7.7 `DELETE /records/{id}`
-없으면 404, 타인 기록이면 403(`admin` 예외).
+없으면 404, 타인 기록이면 403(`is_admin` 예외).
 ```json
 { "message": "삭제되었습니다", "deleted_id": 3 }
 ```
@@ -259,13 +276,13 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 ### 7.8 `GET /search?start=&end=`
 - `start`, `end` 둘 다 선택
 - 둘 다 없으면 전체, 하나만 있으면 편도 범위, `start > end`면 **422**
-- 본인 기록만 대상 (`admin`은 전체)
+- 본인 기록만 대상 (`is_admin` 계정은 전체)
 ```json
 { "count": 2, "records": [ { "...RecordOut": "..." } ] }
 ```
 
 ### 7.9 `GET /stats`
-본인 기록만 대상 (`admin`은 전체). **기록이 0건이면 에러 대신 `0`/`null`로 응답.**
+본인 기록만 대상 (`is_admin` 계정은 전체). **기록이 0건이면 에러 대신 `0`/`null`로 응답.**
 ```json
 {
   "count": 5,
@@ -286,8 +303,9 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 - **API 호출**: `fetch()`로 백엔드 API 호출 (같은 출처이므로 CORS 설정 불필요)
 - **라우팅**: `GET /`가 이 파일을 반환하도록 `main.py`에서 처리. 기존 API 상태 메시지는 `/api`로 이동.
 - **기능 범위**:
+  - 로그인/회원가입 (JWT 토큰을 `localStorage`에 저장, 이후 모든 요청에 `Authorization: Bearer` 부착) — 18장 참고
   - 기록 입력 폼 (date, weight, height, systolic, diastolic, blood_sugar, steps, sleep_hours, memo)
-  - 목록 조회 (제출 시 `X-User-Id` 헤더 포함 — 간단한 입력창으로 사용자 전환 가능하게)
+  - 목록 조회
   - 기록 수정/삭제 (목록의 각 행에 [수정]/[삭제] 버튼, 입력 폼을 수정 모드로 재사용) — 더 이상 선택 항목이 아닌 필수 범위. 상세 설계는 16장 참고.
 
 ---
@@ -319,10 +337,11 @@ pytest + httpx(TestClient)로 `tests/test_records.py`에 아래 시나리오를 
 - [ ] DELETE /records/{id} → 정상 삭제 및 메시지 확인
 - [ ] GET /search → start/end 조합별 동작 확인 (없음/편도/양쪽/start>end)
 - [ ] GET /stats → 정상 케이스 및 0건 케이스(null 응답) 확인
-- [ ] 다른 `X-User-Id`로 요청 시 본인 기록만 보이는지 확인
-- [ ] `admin` 헤더로 전체 조회되는지 확인
+- [ ] 다른 사용자로 로그인해 요청 시 본인 기록만 보이는지 확인
+- [ ] `is_admin` 계정으로 전체 조회되는지 확인
 - [ ] 타인 기록 PUT/DELETE 시도 → 403 확인
 - [ ] date 형식 오류 → 422 확인
+- [ ] 회원가입 중복 username → 400, 로그인 실패 → 401, 토큰 없이/잘못된 토큰으로 접근 → 401 확인 (18장 참고)
 
 ---
 
@@ -419,14 +438,16 @@ pytest + httpx(TestClient)로 `tests/test_records.py`에 아래 시나리오를 
 
 - [ ] 서버가 오류 없이 실행되고 `/docs`가 열린다
 - [ ] `/` 접속 시 간단 화면이 정상 렌더링된다
-- [ ] 12개 엔드포인트(화면 포함, `/goal`·`/reports/weekly` 포함)가 모두 동작한다
+- [ ] 14개 엔드포인트(화면 포함, `/auth/signup`·`/auth/login`·`/goal`·`/reports/weekly` 포함)가 모두 동작한다
 - [ ] BMI·분류·경고·통계 결과가 기준표대로 올바르다
-- [ ] `X-User-Id`별 데이터 분리 및 `admin` 전체조회가 정상 동작한다
+- [ ] 로그인한 사용자별 데이터 분리 및 `is_admin` 전체조회가 정상 동작한다
+- [ ] 토큰 없이/잘못된 토큰으로 접근 시 401이 반환된다
 - [ ] 타인 기록 접근 시 404/403이 올바르게 반환된다
 - [ ] 서버를 재시작해도 데이터가 유지된다 (`health_log.db`)
+- [ ] `SECRET_KEY` 없이 실행하면 시작 시점에 바로 실패한다
 - [ ] pytest 테스트가 모두 통과한다
-- [ ] `docker build` · `docker run`이 성공한다
-- [ ] 저장소에 `venv`·`health_log.db`가 올라가지 않았다 (`.gitignore` 확인)
+- [ ] `docker build` · `docker run`이 성공한다 (`-e SECRET_KEY=...` 필요)
+- [ ] 저장소에 `venv`·`health_log.db`·`.env`가 올라가지 않았다 (`.gitignore` 확인)
 - [ ] README가 필수 항목(소개/기능목록/실행법/기술스택)을 모두 포함한다
 - [ ] 최종 코드가 push됐고, 저장소가 Public이다
 
@@ -503,3 +524,31 @@ Claude Code와 작업할 때 아래 원칙을 따른다.
 **이관 절차**: 서버를 끈 상태에서 `python scripts/migrate_json_to_db.py`를 1회 실행한다. `data.json`의 `records`뿐 아니라 `goals`도 함께 이관한다 — 같은 파일에 있던 데이터라 하나만 옮기면 목표만 파일에 남는 어중간한 상태가 되기 때문에, `Goal(table=True)` 모델을 추가해 함께 이관하도록 범위를 넓혔다.
 
 **Docker**: 컨테이너를 재생성해도 데이터를 유지하려면 `health_log.db`를 호스트에 볼륨 마운트한다: `docker run -d -p 8000:8000 -v $(pwd)/health_log.db:/app/health_log.db my-healthlog-api`
+
+---
+
+## 18. JWT 인증 도입
+
+**목적**: `X-User-Id` 헤더 자기신고 방식은 아무 값이나 넣으면 그 사용자로 행세할 수 있어 인증이 아니었다. 회원가입/로그인 기반 JWT로 전환하고, 관리자 권한도 문자열 매직값(`admin`) 대신 DB의 `is_admin` 필드로 관리한다.
+
+**기술 선택**: 비밀번호 해싱은 `passlib[bcrypt]`, 토큰은 `python-jose[cryptography]`, 로그인 폼 파싱은 `python-multipart`. FastAPI의 `OAuth2PasswordBearer`를 사용해 `/docs`에 Authorize 버튼이 자동으로 생기게 한다. `bcrypt`는 `passlib 1.7.4`와의 호환성 문제(`bcrypt>=4.1`에서 버전 감지 오류) 때문에 `bcrypt==4.0.1`로 고정한다.
+
+**변경된 파일**:
+- `models.py` — `User`(id/username/hashed_password/is_admin) 테이블 추가, `UserCreate`(password만 받고 is_admin은 절대 받지 않음), `UserRead`. `Record.user`(str) → `Record.user_id`(FK), `Goal.user`(str, PK) → `Goal.user_id`(FK, PK)로 변경
+- `auth.py`(신규) — `hash_password`/`verify_password`/`create_access_token`/`decode_access_token`, 토큰→username→DB 조회 후 `User`를 반환하는 `get_current_user` 의존성. `SECRET_KEY`는 환경변수에서만 읽고 하드코딩된 기본값을 두지 않는다 — 없으면 앱 시작 시점(`lifespan`)에 바로 실패한다.
+- `main.py` — `POST /auth/signup`(중복 username 400), `POST /auth/login`(`OAuth2PasswordRequestForm`, 실패 시 401, 성공 시 `{access_token, token_type}`) 추가. 기존 모든 라우터의 `X-User-Id` 기반 의존성을 `Depends(auth.get_current_user)`로 교체, `guest` 기본값 로직 삭제
+- `storage.py` — 소유권 검사·필터링을 `user.id`/`user.is_admin` 기준으로 수정 (매개변수가 문자열 `user`에서 `User` 객체로 바뀜)
+- `scripts/create_admin.py`(신규) — 최초 관리자 계정 생성 CLI (`--username --password`, DB에 직접 `is_admin=True` row 생성). 회원가입 API로는 관리자를 만들 수 없어 이 스크립트가 유일한 경로다.
+- `scripts/seed_data.py`(수정) — 사용자별로 `/auth/signup` → `/auth/login`을 먼저 호출해 토큰을 발급받고, 이후 `Authorization: Bearer` 헤더로 `/records`를 호출하도록 변경. 비밀번호는 스크립트 내 고정값(`SEED_PASSWORD`) 사용
+- `tests/conftest.py` — 사용자 생성 + 토큰 발급을 한 번에 처리하는 `auth_headers(username, is_admin=False)` fixture 추가. 기존 38개 테스트를 전부 `X-User-Id` 헤더 방식에서 `auth_headers`로 전환하고, 회원가입/로그인/인증 실패 케이스 7건을 신규 추가(총 45건)
+- `static/index.html` — 로그인/회원가입 폼, `localStorage`에 토큰 저장, 이후 모든 fetch에 `Authorization: Bearer` 부착. `/auth/login`만 `application/x-www-form-urlencoded`로 전송(`OAuth2PasswordRequestForm` 규격), 나머지는 기존처럼 JSON. 응답이 401이면 토큰을 지우고 로그인 화면으로 전환
+- `requirements.txt` — `passlib[bcrypt]`, `bcrypt==4.0.1`, `python-jose[cryptography]`, `python-multipart` 추가
+- `.env.example`(신규) — `SECRET_KEY=` 키 이름만 포함, 실제 값은 미포함
+
+**유지된 것**: `logic.py`의 계산 로직과, 계산값을 저장하지 않고 응답 시점에 동적으로 계산하는 원칙은 그대로다(4.3 참고).
+
+**기존 시드 데이터 처리**: 문자열 유저명(`user: str`) 기반이던 기존 `health_log.db`는 새 FK 스키마(`user_id: int`)와 호환되지 않아 보존 가치가 없다고 판단해, 마이그레이션 스크립트 없이 DB를 비우고 `create_admin.py` + 수정된 `seed_data.py`로 재시딩했다.
+
+**주의사항**:
+- `SECRET_KEY`가 없으면 서버가 첫 요청이 아니라 **시작 시점**에 바로 실패하도록 `lifespan`에서 확인한다 (운영 중 첫 로그인 시도에서야 500이 나는 상황을 방지).
+- Docker로 실행할 때는 반드시 `-e SECRET_KEY=<값>`을 전달해야 한다.

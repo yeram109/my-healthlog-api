@@ -2,20 +2,20 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from models import Goal, Record
+from models import Goal, Record, User
 
 
-def get_records(session: Session, user: str) -> list[Record]:
+def get_records(session: Session, user: User) -> list[Record]:
     query = select(Record)
-    if user != "admin":
-        query = query.where(Record.user == user)
+    if not user.is_admin:
+        query = query.where(Record.user_id == user.id)
     return list(session.exec(query).all())
 
 
-def search_records(session: Session, user: str, start: str | None, end: str | None) -> list[Record]:
+def search_records(session: Session, user: User, start: str | None, end: str | None) -> list[Record]:
     query = select(Record)
-    if user != "admin":
-        query = query.where(Record.user == user)
+    if not user.is_admin:
+        query = query.where(Record.user_id == user.id)
     if start is not None:
         query = query.where(Record.date >= start)
     if end is not None:
@@ -27,8 +27,8 @@ def get_record_by_id(session: Session, record_id: int) -> Record | None:
     return session.get(Record, record_id)
 
 
-def add_record(session: Session, record: dict[str, Any], user: str) -> Record:
-    db_record = Record(**record, user=user)
+def add_record(session: Session, record: dict[str, Any], user: User) -> Record:
+    db_record = Record(**record, user_id=user.id)
     session.add(db_record)
     session.commit()
     session.refresh(db_record)
@@ -56,18 +56,18 @@ def delete_record(session: Session, record_id: int) -> bool:
     return True
 
 
-def check_ownership(record: Record, user: str) -> bool:
-    return user == "admin" or record.user == user
+def check_ownership(record: Record, user: User) -> bool:
+    return user.is_admin or record.user_id == user.id
 
 
-def get_goal(session: Session, user: str) -> Goal | None:
-    return session.get(Goal, user)
+def get_goal(session: Session, user: User) -> Goal | None:
+    return session.get(Goal, user.id)
 
 
-def set_goal(session: Session, user: str, goal: dict[str, Any]) -> Goal:
-    db_goal = session.get(Goal, user)
+def set_goal(session: Session, user: User, goal: dict[str, Any]) -> Goal:
+    db_goal = session.get(Goal, user.id)
     if db_goal is None:
-        db_goal = Goal(user=user, **goal)
+        db_goal = Goal(user_id=user.id, **goal)
     else:
         for key, value in goal.items():
             setattr(db_goal, key, value)
