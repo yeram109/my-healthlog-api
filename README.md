@@ -13,8 +13,8 @@
 - 기간 검색 (`GET /search`)
 - 통계 조회: 평균값, 카테고리별 카운트 (`GET /stats`)
 - 목표 관리: 목표 체중/혈압 설정 및 달성률 조회 (`PUT`/`GET /goal`)
-- 주간 리포트: 이번주 vs 지난주 평균 비교 (`GET /reports/weekly`)
-- 순수 HTML/JS 화면 (입력 폼, 목록 조회, 수정/삭제, 목표 관리, 주간 리포트)
+- 주간 리포트: 이번주 vs 지난주 평균 비교, 평균 걸음 수/수면 포함 (`GET /reports/weekly`)
+- 탭 기반 대시보드 화면 (대시보드/기록/목표/리포트), Chart.js로 체중·혈압·걸음 수 추이 시각화, 분류 결과 색상 배지
 - 개발용 테스트 데이터 자동 생성 스크립트 (`scripts/seed_data.py`)
 
 ## 기술 스택
@@ -28,7 +28,7 @@
 | 인증 | JWT (python-jose) + bcrypt 해싱(passlib), `OAuth2PasswordBearer` |
 | 테스트 | pytest + httpx (FastAPI TestClient, 인메모리 SQLite) |
 | 배포 | Docker |
-| 프론트엔드 | 순수 HTML + JS |
+| 프론트엔드 | 순수 HTML + CSS + JS (빌드 도구 없음), Chart.js(CDN) |
 
 ## 실행 방법
 
@@ -133,7 +133,10 @@ health-log-api/
 ├── db.py                           # SQLite 엔진, init_db(), get_session() 의존성
 ├── logic.py                         # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
 ├── storage.py                        # 세션 기반 CRUD, 소유권 체크, 목표 저장
-├── static/index.html                  # 화면 (로그인/회원가입, 입력 폼, 목록/수정/삭제, 목표 관리, 주간 리포트)
+├── static/
+│   ├── index.html                     # 로그인/회원가입 + 탭 네비 + 4개 뷰(대시보드/기록/목표/리포트) 마크업
+│   ├── css/style.css                    # 색상 변수, 탭/배지/카드/차트/반응형 스타일
+│   └── js/app.js                         # 인증, 탭 전환(lazy load), CRUD, Chart.js 렌더링
 ├── scripts/
 │   ├── seed_data.py                     # 개발용 테스트 데이터 자동 생성 스크립트 (회원가입+로그인 포함)
 │   ├── create_admin.py                    # 최초 관리자 계정 생성 CLI

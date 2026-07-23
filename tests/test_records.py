@@ -295,6 +295,8 @@ def test_stats_computes_averages_and_category_counts(client, auth_headers):
     body = res.json()
     assert body["count"] == 2
     assert body["avg_bmi"] == round((23.0 + 35.2) / 2, 1)
+    assert body["avg_steps"] == 8000
+    assert body["avg_sleep_hours"] == 7.5
     assert body["bmi_category_counts"]["과체중"] == 1
     assert body["bmi_category_counts"]["비만"] == 1
     assert body["bp_category_counts"]["정상"] == 1
@@ -424,6 +426,10 @@ def test_weekly_report_computes_averages_and_delta(client, auth_headers):
     assert body["last_week"]["count"] == 2
     assert body["last_week"]["avg_weight"] == 76.0
     assert body["delta"]["weight"] == -5.0
+    assert body["this_week"]["avg_steps"] == 8000
+    assert body["this_week"]["avg_sleep_hours"] == 7.5
+    assert body["delta"]["steps"] == 0.0
+    assert body["delta"]["sleep_hours"] == 0.0
 
 
 def test_weekly_report_scoped_to_user(client, auth_headers):

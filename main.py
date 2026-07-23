@@ -194,6 +194,8 @@ def get_stats(
             "avg_systolic": None,
             "avg_diastolic": None,
             "avg_blood_sugar": None,
+            "avg_steps": None,
+            "avg_sleep_hours": None,
             "bmi_category_counts": bmi_counts,
             "bp_category_counts": bp_counts,
             "sugar_category_counts": sugar_counts,
@@ -267,6 +269,8 @@ def get_weekly_report(
             "systolic": round(this_week_avg["avg_systolic"] - last_week_avg["avg_systolic"], 1),
             "diastolic": round(this_week_avg["avg_diastolic"] - last_week_avg["avg_diastolic"], 1),
             "blood_sugar": round(this_week_avg["avg_blood_sugar"] - last_week_avg["avg_blood_sugar"], 1),
+            "steps": round(this_week_avg["avg_steps"] - last_week_avg["avg_steps"], 1),
+            "sleep_hours": round(this_week_avg["avg_sleep_hours"] - last_week_avg["avg_sleep_hours"], 1),
         }
 
     return {

@@ -93,6 +93,8 @@ def calculate_averages(records: list[dict[str, Any]]) -> dict[str, Any] | None:
         "avg_systolic": round(sum(r["systolic"] for r in enriched) / count, 1),
         "avg_diastolic": round(sum(r["diastolic"] for r in enriched) / count, 1),
         "avg_blood_sugar": round(sum(r["blood_sugar"] for r in enriched) / count, 1),
+        "avg_steps": round(sum(r["steps"] for r in enriched) / count, 1),
+        "avg_sleep_hours": round(sum(r["sleep_hours"] for r in enriched) / count, 1),
     }
 
 

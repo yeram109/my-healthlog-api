@@ -3,47 +3,26 @@
 <head>
 <meta charset="UTF-8" />
 <title>마이 헬스 로그</title>
-<style>
-  html { color-scheme: light; }
-  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #222; background: #fff; }
-  h1 { font-size: 1.4rem; }
-  h2 { font-size: 1.1rem; margin-top: 2rem; }
-  .user-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 1.5rem; }
-  .user-bar span { font-weight: 600; }
-  form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
-  form label { display: flex; flex-direction: column; font-size: 0.85rem; color: #555; }
-  form input { padding: 6px 8px; margin-top: 4px; }
-  form .full { grid-column: 1 / -1; }
-  .form-actions { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
-  button { padding: 8px 16px; cursor: pointer; }
-  #submit-btn { flex: 1; }
-  #cancel-btn { display: none; }
-  #signup-view { display: none; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9rem; }
-  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-  .warn { color: #b00020; font-size: 0.8rem; }
-  .row-actions button { padding: 4px 8px; margin-right: 4px; font-size: 0.8rem; }
-  #error-banner { display: none; background: #fdecea; color: #b00020; padding: 8px 12px; border-radius: 4px; margin-top: 8px; }
-  .switch-link { background: none; border: none; color: #1a5fb4; text-decoration: underline; padding: 0; }
-  .legend { font-size: 0.8rem; color: #666; margin: 4px 0 0; }
-</style>
+<link rel="stylesheet" href="/static/css/style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 </head>
-<body>
-  <h1>마이 헬스 로그</h1>
+<body data-palette="#2a78d6,#d97706">
   <div id="error-banner"></div>
 
   <div id="auth-section">
+    <h1>마이 헬스 로그</h1>
+
     <div id="login-view">
       <h2>로그인</h2>
-      <form id="login-form">
-        <label class="full">아이디
+      <form id="login-form" class="auth-form">
+        <label>아이디
           <input type="text" name="username" required />
         </label>
-        <label class="full">비밀번호
+        <label>비밀번호
           <input type="password" name="password" required />
         </label>
         <div class="form-actions">
-          <button type="submit">로그인</button>
+          <button type="submit" class="primary">로그인</button>
           <button class="switch-link" id="show-signup-btn" type="button">계정이 없으신가요? 회원가입</button>
         </div>
       </form>
@@ -51,15 +30,15 @@
 
     <div id="signup-view">
       <h2>회원가입</h2>
-      <form id="signup-form">
-        <label class="full">아이디
+      <form id="signup-form" class="auth-form">
+        <label>아이디
           <input type="text" name="username" required />
         </label>
-        <label class="full">비밀번호
+        <label>비밀번호
           <input type="password" name="password" required />
         </label>
         <div class="form-actions">
-          <button type="submit">가입하기</button>
+          <button type="submit" class="primary">가입하기</button>
           <button class="switch-link" id="show-login-btn" type="button">이미 계정이 있으신가요? 로그인</button>
         </div>
       </form>
@@ -67,472 +46,141 @@
   </div>
 
   <div id="app-section">
-    <div class="user-bar">
-      <span id="current-username"></span>
-      <button id="logout-btn">로그아웃</button>
-      <button id="reload-btn">목록 새로고침</button>
-      <button id="delete-account-btn" class="switch-link">회원탈퇴</button>
+    <div class="app-header">
+      <div class="brand">
+        <h1>마이 헬스 로그</h1>
+        <span id="current-username"></span>
+      </div>
+      <div class="header-actions">
+        <button id="logout-btn">로그아웃</button>
+        <button class="switch-link" id="delete-account-btn">회원탈퇴</button>
+      </div>
     </div>
 
-    <h2 id="form-heading">새 기록 추가</h2>
-    <form id="record-form">
-      <label class="full">날짜
-        <input type="date" name="date" required />
-      </label>
-      <label>몸무게(kg)
-        <input type="number" step="0.1" name="weight" required />
-      </label>
-      <label>키(cm)
-        <input type="number" step="0.1" name="height" required />
-      </label>
-      <label>수축기 혈압
-        <input type="number" name="systolic" required />
-      </label>
-      <label>이완기 혈압
-        <input type="number" name="diastolic" required />
-      </label>
-      <label>공복 혈당
-        <input type="number" name="blood_sugar" required />
-      </label>
-      <label>걸음 수
-        <input type="number" name="steps" value="0" />
-      </label>
-      <label>수면 시간
-        <input type="number" step="0.1" name="sleep_hours" value="0" />
-      </label>
-      <label class="full">메모
-        <input type="text" name="memo" />
-      </label>
-      <div class="form-actions">
-        <button id="submit-btn" type="submit">저장</button>
-        <button id="cancel-btn" type="button">취소</button>
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="dashboard" type="button">대시보드</button>
+      <button class="tab-btn" data-tab="records" type="button">기록</button>
+      <button class="tab-btn" data-tab="goal" type="button">목표</button>
+      <button class="tab-btn" data-tab="report" type="button">리포트</button>
+    </nav>
+
+    <!-- 대시보드 -->
+    <section id="view-dashboard" class="view active">
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">오늘 체중</div>
+          <div class="kpi-value" id="kpi-weight-value">-</div>
+          <div class="kpi-delta" id="kpi-weight-delta"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">BMI</div>
+          <div class="kpi-value" id="kpi-bmi-value">-</div>
+          <div class="kpi-delta" id="kpi-bmi-badge"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">혈압</div>
+          <div class="kpi-value" id="kpi-bp-value">-</div>
+          <div class="kpi-delta" id="kpi-bp-badge"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">공복 혈당</div>
+          <div class="kpi-value" id="kpi-sugar-value">-</div>
+          <div class="kpi-delta" id="kpi-sugar-badge"></div>
+        </div>
       </div>
-    </form>
 
-    <h2>기록 목록</h2>
-    <p class="legend">걸음 수: 5,000 미만 부족 · 5,000~9,999 적정 · 10,000 이상 우수 &nbsp;|&nbsp; 수면 시간: 7시간 미만 부족 · 7~9시간 적정 · 9시간 초과 과다</p>
-    <table>
-      <thead>
-        <tr>
-          <th>id</th><th>날짜</th><th>몸무게</th><th>BMI</th><th>BMI 분류</th>
-          <th>혈압</th><th>혈당</th><th>걸음 수</th><th>수면</th><th>경고</th><th>동작</th>
-        </tr>
-      </thead>
-      <tbody id="record-list"></tbody>
-    </table>
-
-    <h2>목표 관리</h2>
-    <form id="goal-form">
-      <label>목표 체중(kg)
-        <input type="number" step="0.1" name="target_weight" required />
-      </label>
-      <label>목표 수축기 혈압
-        <input type="number" name="target_systolic" required />
-      </label>
-      <label>목표 이완기 혈압
-        <input type="number" name="target_diastolic" required />
-      </label>
-      <div class="form-actions">
-        <button type="submit">목표 저장</button>
+      <h3>체중 추이 (최근 14일)</h3>
+      <div class="chart-wrapper">
+        <canvas id="weight-chart" role="img" aria-label="최근 14일 체중 추이 라인 차트"></canvas>
       </div>
-    </form>
-    <div id="goal-display"></div>
 
-    <h2>주간 리포트</h2>
-    <div id="weekly-report"></div>
+      <h3>혈압 추이 (최근 14일)</h3>
+      <div class="chart-legend" id="bp-chart-legend"></div>
+      <div class="chart-wrapper">
+        <canvas id="bp-chart" role="img" aria-label="최근 14일 수축기/이완기 혈압 추이 라인 차트"></canvas>
+      </div>
+    </section>
+
+    <!-- 기록 -->
+    <section id="view-records" class="view">
+      <div class="records-toolbar">
+        <h2>기록</h2>
+        <button id="toggle-form-btn" class="primary" type="button">새 기록 추가</button>
+      </div>
+
+      <div id="record-form-wrapper" style="display:none;">
+      <h3 id="form-heading">새 기록 추가</h3>
+      <form id="record-form" class="data-form">
+        <label class="full">날짜
+          <input type="date" name="date" required />
+        </label>
+        <label>몸무게(kg)
+          <input type="number" step="0.1" name="weight" required />
+        </label>
+        <label>키(cm)
+          <input type="number" step="0.1" name="height" required />
+        </label>
+        <label>수축기 혈압
+          <input type="number" name="systolic" required />
+        </label>
+        <label>이완기 혈압
+          <input type="number" name="diastolic" required />
+        </label>
+        <label>공복 혈당
+          <input type="number" name="blood_sugar" required />
+        </label>
+        <label>걸음 수
+          <input type="number" name="steps" value="0" />
+        </label>
+        <label>수면 시간
+          <input type="number" step="0.1" name="sleep_hours" value="0" />
+        </label>
+        <label class="full">메모
+          <input type="text" name="memo" />
+        </label>
+        <div class="form-actions">
+          <button id="submit-btn" type="submit" class="primary">저장</button>
+          <button id="cancel-btn" type="button">취소</button>
+        </div>
+      </form>
+      </div>
+
+      <p class="legend-note">걸음 수: 5,000 미만 부족 · 5,000~9,999 적정 · 10,000 이상 우수 &nbsp;|&nbsp; 수면 시간: 7시간 미만 부족 · 7~9시간 적정 · 9시간 초과 과다</p>
+
+      <div id="record-list"></div>
+    </section>
+
+    <!-- 목표 -->
+    <section id="view-goal" class="view">
+      <h2>목표</h2>
+      <form id="goal-form" class="data-form">
+        <label>목표 체중(kg)
+          <input type="number" step="0.1" name="target_weight" required />
+        </label>
+        <label>목표 수축기 혈압
+          <input type="number" name="target_systolic" required />
+        </label>
+        <label>목표 이완기 혈압
+          <input type="number" name="target_diastolic" required />
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="primary">목표 저장</button>
+        </div>
+      </form>
+      <div id="goal-display"></div>
+    </section>
+
+    <!-- 리포트 -->
+    <section id="view-report" class="view">
+      <h2>리포트</h2>
+      <div class="stat-tile-grid" id="report-stats"></div>
+      <h3>일별 걸음 수 (이번 주)</h3>
+      <div class="chart-wrapper">
+        <canvas id="steps-chart" role="img" aria-label="이번 주 일별 걸음 수 막대 그래프"></canvas>
+      </div>
+    </section>
   </div>
 
-<script>
-const AUTH_TOKEN_KEY = "healthlog_token";
-const AUTH_USERNAME_KEY = "healthlog_username";
-let editingId = null;
-
-function getToken() {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
-}
-
-function getAuthHeaders() {
-  return { "Authorization": `Bearer ${getToken()}` };
-}
-
-function saveAuth(token, username) {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
-  localStorage.setItem(AUTH_USERNAME_KEY, username);
-}
-
-function clearAuth() {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USERNAME_KEY);
-}
-
-function showAuth() {
-  clearAuth();
-  document.getElementById("app-section").style.display = "none";
-  document.getElementById("auth-section").style.display = "block";
-  document.getElementById("login-view").style.display = "block";
-  document.getElementById("signup-view").style.display = "none";
-}
-
-function showApp() {
-  document.getElementById("auth-section").style.display = "none";
-  document.getElementById("app-section").style.display = "block";
-  document.getElementById("current-username").textContent = localStorage.getItem(AUTH_USERNAME_KEY) || "";
-  loadAll();
-}
-
-function isUnauthorized(res) {
-  if (res.status === 401) {
-    showAuth();
-    return true;
-  }
-  return false;
-}
-
-function showError(status, body) {
-  const banner = document.getElementById("error-banner");
-  banner.textContent = `${status}: ${JSON.stringify(body.detail)}`;
-  banner.style.display = "block";
-}
-
-function clearError() {
-  const banner = document.getElementById("error-banner");
-  banner.style.display = "none";
-  banner.textContent = "";
-}
-
-async function handleLogin(event) {
-  event.preventDefault();
-  clearError();
-  const form = event.target;
-  const params = new URLSearchParams();
-  params.set("username", form.username.value);
-  params.set("password", form.password.value);
-
-  const res = await fetch("/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-
-  if (!res.ok) {
-    showError(res.status, await res.json());
-    return;
-  }
-
-  const data = await res.json();
-  saveAuth(data.access_token, form.username.value);
-  form.reset();
-  showApp();
-}
-
-async function handleSignup(event) {
-  event.preventDefault();
-  clearError();
-  const form = event.target;
-  const username = form.username.value;
-  const password = form.password.value;
-
-  const res = await fetch("/auth/signup", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-
-  if (!res.ok) {
-    showError(res.status, await res.json());
-    return;
-  }
-
-  const params = new URLSearchParams();
-  params.set("username", username);
-  params.set("password", password);
-  const loginRes = await fetch("/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-
-  if (!loginRes.ok) {
-    showError(loginRes.status, await loginRes.json());
-    return;
-  }
-
-  const loginData = await loginRes.json();
-  saveAuth(loginData.access_token, username);
-  form.reset();
-  showApp();
-}
-
-function handleLogout() {
-  showAuth();
-}
-
-async function handleDeleteAccount() {
-  if (!confirm("정말 회원탈퇴 하시겠어요? 로그인은 더 이상 할 수 없습니다.")) return;
-
-  const res = await fetch("/auth/me", {
-    method: "DELETE",
-    headers: getAuthHeaders(),
-  });
-
-  if (isUnauthorized(res)) return;
-  if (!res.ok) {
-    showError(res.status, await res.json());
-    return;
-  }
-
-  showAuth();
-}
-
-function setFormMode(mode, id) {
-  const heading = document.getElementById("form-heading");
-  const submitBtn = document.getElementById("submit-btn");
-  const cancelBtn = document.getElementById("cancel-btn");
-  if (mode === "edit") {
-    heading.textContent = `기록 수정 중 (#${id})`;
-    submitBtn.textContent = "저장";
-    cancelBtn.style.display = "inline-block";
-  } else {
-    heading.textContent = "새 기록 추가";
-    submitBtn.textContent = "저장";
-    cancelBtn.style.display = "none";
-  }
-}
-
-function fillFormWith(record) {
-  const form = document.getElementById("record-form");
-  form.date.value = record.date;
-  form.weight.value = record.weight;
-  form.height.value = record.height;
-  form.systolic.value = record.systolic;
-  form.diastolic.value = record.diastolic;
-  form.blood_sugar.value = record.blood_sugar;
-  form.steps.value = record.steps;
-  form.sleep_hours.value = record.sleep_hours;
-  form.memo.value = record.memo;
-}
-
-function startEdit(record) {
-  editingId = record.id;
-  clearError();
-  fillFormWith(record);
-  setFormMode("edit", record.id);
-}
-
-function cancelEdit() {
-  editingId = null;
-  document.getElementById("record-form").reset();
-  setFormMode("create");
-}
-
-function renderRecordRow(record) {
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td>${record.id}</td>
-    <td>${record.date}</td>
-    <td>${record.weight}</td>
-    <td>${record.bmi}</td>
-    <td>${record.bmi_category}</td>
-    <td>${record.bp_category}</td>
-    <td>${record.sugar_category}</td>
-    <td>${record.steps} (${record.steps_grade})</td>
-    <td>${record.sleep_hours}h (${record.sleep_category})</td>
-    <td class="warn">${record.warnings.join(", ")}</td>
-  `;
-
-  const actionsTd = document.createElement("td");
-  actionsTd.className = "row-actions";
-
-  const editBtn = document.createElement("button");
-  editBtn.type = "button";
-  editBtn.textContent = "수정";
-  editBtn.addEventListener("click", () => startEdit(record));
-
-  const deleteBtn = document.createElement("button");
-  deleteBtn.type = "button";
-  deleteBtn.textContent = "삭제";
-  deleteBtn.addEventListener("click", () => deleteRecord(record.id));
-
-  actionsTd.appendChild(editBtn);
-  actionsTd.appendChild(deleteBtn);
-  tr.appendChild(actionsTd);
-
-  return tr;
-}
-
-async function loadRecords() {
-  const res = await fetch("/records", { headers: getAuthHeaders() });
-  if (isUnauthorized(res)) return;
-  const data = await res.json();
-  const tbody = document.getElementById("record-list");
-  tbody.innerHTML = "";
-  for (const record of data.records) {
-    tbody.appendChild(renderRecordRow(record));
-  }
-}
-
-async function deleteRecord(id) {
-  if (!confirm("이 기록을 삭제할까요?")) return;
-
-  const res = await fetch(`/records/${id}`, {
-    method: "DELETE",
-    headers: getAuthHeaders(),
-  });
-
-  if (isUnauthorized(res)) return;
-  if (!res.ok) {
-    showError(res.status, await res.json());
-    return;
-  }
-
-  clearError();
-  if (editingId === id) cancelEdit();
-  await loadRecords();
-}
-
-async function submitForm(event) {
-  event.preventDefault();
-  clearError();
-
-  const form = event.target;
-  const payload = {
-    date: form.date.value,
-    weight: parseFloat(form.weight.value),
-    height: parseFloat(form.height.value),
-    systolic: parseInt(form.systolic.value, 10),
-    diastolic: parseInt(form.diastolic.value, 10),
-    blood_sugar: parseInt(form.blood_sugar.value, 10),
-    steps: parseInt(form.steps.value || "0", 10),
-    sleep_hours: parseFloat(form.sleep_hours.value || "0"),
-    memo: form.memo.value,
-  };
-
-  const method = editingId ? "PUT" : "POST";
-  const url = editingId ? `/records/${editingId}` : "/records";
-
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify(payload),
-  });
-
-  if (isUnauthorized(res)) return;
-  if (!res.ok) {
-    showError(res.status, await res.json());
-    return;
-  }
-
-  cancelEdit();
-  await loadRecords();
-}
-
-async function loadGoal() {
-  const res = await fetch("/goal", { headers: getAuthHeaders() });
-  if (isUnauthorized(res)) return;
-  const data = await res.json();
-  const el = document.getElementById("goal-display");
-
-  if (!data.goal) {
-    el.textContent = "설정된 목표가 없습니다.";
-    return;
-  }
-
-  const g = data.goal;
-  const a = data.achievement;
-  let html = `목표: 체중 ${g.target_weight}kg / 수축기 ${g.target_systolic} / 이완기 ${g.target_diastolic} (설정일: ${g.set_date})`;
-  if (a) {
-    html += `<br>달성률 — 체중 ${a.weight_percent}% · 수축기 ${a.systolic_percent}% · 이완기 ${a.diastolic_percent}%`;
-  } else {
-    html += `<br>달성률 계산 불가 (설정일 이후 기록이 없어요)`;
-  }
-  el.innerHTML = html;
-}
-
-async function submitGoal(event) {
-  event.preventDefault();
-  clearError();
-
-  const form = event.target;
-  const payload = {
-    target_weight: parseFloat(form.target_weight.value),
-    target_systolic: parseInt(form.target_systolic.value, 10),
-    target_diastolic: parseInt(form.target_diastolic.value, 10),
-  };
-
-  const res = await fetch("/goal", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify(payload),
-  });
-
-  if (isUnauthorized(res)) return;
-  if (!res.ok) {
-    showError(res.status, await res.json());
-    return;
-  }
-
-  form.reset();
-  await loadGoal();
-}
-
-async function loadWeeklyReport() {
-  const res = await fetch("/reports/weekly", { headers: getAuthHeaders() });
-  if (isUnauthorized(res)) return;
-  const data = await res.json();
-  const el = document.getElementById("weekly-report");
-
-  if (!data.this_week || !data.last_week) {
-    el.textContent = "비교할 데이터가 부족합니다 (최근 14일 기록이 필요해요).";
-    return;
-  }
-
-  const fields = [
-    ["weight", "몸무게"],
-    ["bmi", "BMI"],
-    ["systolic", "수축기"],
-    ["diastolic", "이완기"],
-    ["blood_sugar", "혈당"],
-  ];
-  let rows = "";
-  for (const [key, label] of fields) {
-    rows += `<tr><td>${label}</td><td>${data.this_week["avg_" + key]}</td><td>${data.last_week["avg_" + key]}</td><td>${data.delta[key]}</td></tr>`;
-  }
-  el.innerHTML = `
-    <table>
-      <thead><tr><th>항목</th><th>이번주 평균</th><th>지난주 평균</th><th>증감</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-}
-
-function loadAll() {
-  loadRecords();
-  loadGoal();
-  loadWeeklyReport();
-}
-
-document.getElementById("show-signup-btn").addEventListener("click", () => {
-  document.getElementById("login-view").style.display = "none";
-  document.getElementById("signup-view").style.display = "block";
-});
-document.getElementById("show-login-btn").addEventListener("click", () => {
-  document.getElementById("signup-view").style.display = "none";
-  document.getElementById("login-view").style.display = "block";
-});
-document.getElementById("login-form").addEventListener("submit", handleLogin);
-document.getElementById("signup-form").addEventListener("submit", handleSignup);
-document.getElementById("logout-btn").addEventListener("click", handleLogout);
-document.getElementById("delete-account-btn").addEventListener("click", handleDeleteAccount);
-document.getElementById("reload-btn").addEventListener("click", loadAll);
-document.getElementById("cancel-btn").addEventListener("click", cancelEdit);
-document.getElementById("record-form").addEventListener("submit", submitForm);
-document.getElementById("goal-form").addEventListener("submit", submitGoal);
-
-if (getToken()) {
-  showApp();
-} else {
-  showAuth();
-}
-</script>
+<script src="/static/js/app.js"></script>
 </body>
 </html>

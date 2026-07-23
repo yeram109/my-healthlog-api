@@ -299,14 +299,14 @@ BMI = 몸무게(kg) ÷ (키(m) × 키(m))
 
 ## 8. 프론트엔드(간단 화면) 명세
 
-- **파일**: `static/index.html` 단일 파일, 프레임워크 없이 순수 HTML + JS
+- **파일**: `static/index.html` + `static/css/style.css` + `static/js/app.js` (19장 전환 이후, 프레임워크 없이 순수 HTML/CSS/JS + Chart.js CDN)
 - **API 호출**: `fetch()`로 백엔드 API 호출 (같은 출처이므로 CORS 설정 불필요)
-- **라우팅**: `GET /`가 이 파일을 반환하도록 `main.py`에서 처리. 기존 API 상태 메시지는 `/api`로 이동.
+- **라우팅**: `GET /`가 `index.html`을 반환하도록 `main.py`에서 처리. 기존 API 상태 메시지는 `/api`로 이동.
 - **기능 범위**:
   - 로그인/회원가입 (JWT 토큰을 `localStorage`에 저장, 이후 모든 요청에 `Authorization: Bearer` 부착) — 18장 참고
+  - 대시보드/기록/목표/리포트 4개 탭 — 19장 참고
   - 기록 입력 폼 (date, weight, height, systolic, diastolic, blood_sugar, steps, sleep_hours, memo)
-  - 목록 조회
-  - 기록 수정/삭제 (목록의 각 행에 [수정]/[삭제] 버튼, 입력 폼을 수정 모드로 재사용) — 더 이상 선택 항목이 아닌 필수 범위. 상세 설계는 16장 참고.
+  - 기록 수정/삭제 (목록의 각 행에 [수정]/[삭제] 버튼, 입력 폼을 수정 모드로 재사용) — 더 이상 선택 항목이 아닌 필수 범위. 기본 상호작용 설계는 16장, 최신 마크업은 19장 참고.
 
 ---
 
@@ -404,7 +404,7 @@ pytest + httpx(TestClient)로 `tests/test_records.py`에 아래 시나리오를 
 
 **엔드포인트**: `GET /reports/weekly` 신설.
 
-**로직**: `storage.get_records(user)`로 가져온 기록을 오늘 기준 최근 7일과 그 이전 7일(8~14일 전)로 나눠 각각 weight/bmi/systolic/diastolic/blood_sugar 평균을 계산하고 두 구간의 증감(delta)을 함께 반환한다. 날짜 범위를 나누는 방식은 `/search`의 필터링 로직을 재사용한다. 평균 계산 로직은 `/stats`와 중복되므로 `logic.py`에 공용 함수로 뽑아 재사용한다.
+**로직**: `storage.get_records(user)`로 가져온 기록을 오늘 기준 최근 7일과 그 이전 7일(8~14일 전)로 나눠 각각 weight/bmi/systolic/diastolic/blood_sugar/**steps/sleep_hours**(19장 리포트 뷰를 위해 추가) 평균을 계산하고 두 구간의 증감(delta)을 함께 반환한다. 날짜 범위를 나누는 방식은 `/search`의 필터링 로직을 재사용한다. 평균 계산 로직은 `/stats`와 중복되므로 `logic.py`에 공용 함수로 뽑아 재사용한다.
 
 **기록 부족 처리**: 두 구간 중 하나라도 기록이 0건이면 `/stats`처럼 해당 구간 값을 `null`로 응답한다.
 
@@ -564,3 +564,33 @@ Claude Code와 작업할 때 아래 원칙을 따른다.
 - `static/index.html`에 "회원탈퇴" 버튼 추가, `confirm()` 확인 후 `DELETE /auth/me` 호출하고 로그아웃과 동일하게 처리한다.
 
 **스키마 변경 주의**: `is_active` 컬럼 추가는 기존 `health_log.db`의 `user` 테이블에는 반영되지 않는다(`SQLModel.metadata.create_all()`은 없는 테이블만 생성하고 기존 테이블의 컬럼은 바꾸지 않음). 17장의 "스키마가 바뀌면 DB를 재생성" 원칙에 따라 DB를 비우고 `create_admin.py` + `seed_data.py`로 재시딩했다.
+
+---
+
+## 19. 프론트엔드 고도화 — 대시보드/차트/다중 화면
+
+**목적**: 단일 입력 폼 + 목록이던 화면을 대시보드/기록/목표/리포트 4개 탭으로 확장하고, Chart.js로 추이를 시각화하며, 분류 결과를 색상 배지로 표현한다.
+
+**파일 분리**: 규모가 커져 유지보수를 위해 단일 `index.html`을 3개 파일로 분리했다.
+```
+static/
+├── index.html   (헤더 + 탭 네비 + 4개 뷰 컨테이너 마크업)
+├── css/style.css (색상 변수 + 탭/배지/카드/차트/반응형 스타일)
+└── js/app.js     (인증 + 탭 전환 + CRUD + Chart.js 렌더링)
+```
+
+**차트**: Chart.js CDN(`4.4.1`), `responsive:true`/`maintainAspectRatio:false` + `position:relative`·고정 `height`인 `.chart-wrapper`로 감싼다. 각 `<canvas>`에 `role="img"` + `aria-label`을 붙인다. 2계열(혈압) 차트는 Chart.js 기본 범례를 끄고 커스텀 HTML 범례를 쓴다.
+
+**색상**: 상태 배지(정상=success/주의·과체중·공복혈당장애=warning/고혈압·비만·당뇨의심=danger)는 지정된 팔레트를 그대로 쓴다. 혈압 차트의 수축기/이완기 2계열 색상(`#2a78d6`, `#d97706`)은 `validate_palette.js`로 CVD(색각이상) 구분 가능성을 검증했다(ΔE 27~33, 전부 PASS). 걸음수/수면 등급(부족/적정/우수/과다)의 배지 색은 명세에 없어 BMI/혈압 배지와 같은 규칙(부족·과다=warning, 적정·우수=success)으로 자체적으로 맞춰 확장했다.
+
+**뷰별 구현 요약**:
+- **대시보드**: `GET /search?start=<14일전>`으로 최근 14일 조회. KPI 카드는 "최신 기록 vs 그 이전 기록"으로 계산한다(모든 날짜에 기록이 있다는 보장이 없어 "오늘/전일"을 달력 날짜가 아니라 최근 두 기록으로 해석). 체중 라인차트(area fill), 혈압 라인차트(2계열).
+- **기록**: 기존 목록/수정/삭제를 bordered row 리스트로 재구성, "새 기록 추가" 버튼으로 폼을 토글. CRUD 후 대시보드·목표·리포트 탭의 lazy-load 캐시를 무효화해 다음 방문 시 재조회한다.
+- **목표**: 기존 `PUT`/`GET /goal` 그대로 사용, 응답의 달성률(`*_percent`)을 progress bar 폭으로 직접 매핑.
+- **리포트**: `GET /reports/weekly`에 걸음수/수면 평균이 없어서 `logic.calculate_averages()`와 `/stats`·`/reports/weekly` 응답에 `avg_steps`/`avg_sleep_hours`(및 `delta.steps`/`delta.sleep_hours`)를 추가했다(계획엔 없었지만 리포트 뷰 요구사항을 만족하려면 필요했음). 일별 걸음 수 막대그래프는 `GET /search?start=<7일전>`으로 이번 주 데이터만 별도 조회한다.
+
+**탭 전환/lazy load**: `data-tab` 버튼 클릭 시 `.active` 클래스를 토글하고, 탭별 최초 진입 시점에만 API를 호출한다(`tabLoaded` 플래그). 로그인 시 플래그를 초기화하고 대시보드부터 로드한다.
+
+**인증**: 모든 fetch에 기존과 동일하게 `Authorization: Bearer` 헤더를 붙이고, 401이면 로그인 화면으로 돌아간다(기존 로직 그대로 유지, 4개 탭에 공통 적용).
+
+**검증 한계**: 이 세션의 브라우저 자동화 도구가 스크린샷/뷰포트 측정을 정상적으로 수행하지 못해(패널이 컴포지팅되지 않는 도구 자체의 문제), 반응형 레이아웃과 차트의 실제 렌더링 모습은 시각적으로 확인하지 못했다. 데이터 바인딩·탭 전환·CRUD·콘솔 에러 없음은 DOM/네트워크 응답 기준으로 검증했다.
