@@ -4,11 +4,9 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
-import auth
-import logic
-import storage
-from db import get_session
-from models import User
+from .. import auth, logic, storage
+from ..db import get_session
+from ..models import User
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 

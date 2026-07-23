@@ -3,7 +3,7 @@ from typing import Iterator
 
 from sqlmodel import Session, SQLModel, create_engine
 
-DB_FILE = Path(__file__).parent / "health_log.db"
+DB_FILE = Path(__file__).parent.parent / "health_log.db"
 engine = create_engine(f"sqlite:///{DB_FILE}", connect_args={"check_same_thread": False})
 
 

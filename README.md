@@ -39,7 +39,7 @@ python3.12 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 export SECRET_KEY=<임의의 긴 랜덤 문자열>   # .env.example 참고, 없으면 서버가 시작 시점에 바로 실패한다
-uvicorn main:app --reload
+uvicorn app.main:app --reload
 ```
 
 - API 문서: http://127.0.0.1:8000/docs (우측 상단 **Authorize** 버튼으로 토큰 인증)
@@ -127,21 +127,23 @@ python scripts/migrate_json_to_db.py
 
 ```
 health-log-api/
-├── main.py                      # FastAPI 앱 생성, lifespan, 정적 파일 마운트, 라우터 등록
-├── auth.py                       # 비밀번호 해싱, JWT 발급/검증, get_current_user 의존성
-├── models.py                      # SQLModel (User/Record/Goal 테이블 + Create/Read 스키마)
-├── db.py                           # SQLite 엔진, init_db(), get_session() 의존성
-├── logic.py                         # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
-├── storage.py                        # 세션 기반 CRUD, 소유권 체크, 목표 저장
-├── routers/
-│   ├── auth.py                        # /auth/signup, /auth/login, /auth/me
-│   ├── records.py                     # /records, /search, /stats
-│   ├── goal.py                        # /goal
-│   └── reports.py                     # /reports/weekly
-├── static/
-│   ├── index.html                     # 로그인/회원가입 + 탭 네비 + 4개 뷰(대시보드/기록/목표/리포트) 마크업
-│   ├── css/style.css                    # 색상 변수, 탭/배지/카드/차트/반응형 스타일
-│   └── js/app.js                         # 인증, 탭 전환(lazy load), CRUD, Chart.js 렌더링
+├── app/                          # 애플리케이션 패키지
+│   ├── main.py                        # FastAPI 앱 생성, lifespan, 정적 파일 마운트, 라우터 등록
+│   ├── auth.py                         # 비밀번호 해싱, JWT 발급/검증, get_current_user 의존성
+│   ├── models.py                        # SQLModel (User/Record/Goal 테이블 + Create/Read 스키마)
+│   ├── db.py                             # SQLite 엔진, init_db(), get_session() 의존성
+│   ├── logic.py                           # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
+│   ├── storage.py                          # 세션 기반 CRUD, 소유권 체크, 목표 저장
+│   ├── routers/
+│   │   ├── auth.py                          # /auth/signup, /auth/login, /auth/me
+│   │   ├── records.py                       # /records, /search, /stats
+│   │   ├── goal.py                          # /goal
+│   │   └── reports.py                       # /reports/weekly
+│   └── static/
+│       ├── index.html                       # 로그인/회원가입 + 탭 네비 + 4개 뷰(대시보드/기록/목표/리포트) 마크업
+│       ├── css/style.css                      # 색상 변수, 탭/배지/카드/차트/반응형 스타일
+│       └── js/app.js                           # 인증, 탭 전환(lazy load), CRUD, Chart.js 렌더링
+├── health_log.db                # SQLite DB 파일 (프로젝트 루트, app 패키지 밖)
 ├── scripts/
 │   ├── seed_data.py                     # 개발용 테스트 데이터 자동 생성 스크립트 (회원가입+로그인 포함)
 │   ├── create_admin.py                    # 최초 관리자 계정 생성 CLI

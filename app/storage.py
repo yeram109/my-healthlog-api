@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from models import Goal, Record, User
+from .models import Goal, Record, User
 
 
 def get_records(session: Session, user: User) -> list[Record]:

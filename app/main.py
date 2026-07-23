@@ -5,10 +5,10 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-import auth
-from db import init_db
-from routers import auth as auth_router
-from routers import goal, records, reports
+from . import auth
+from .db import init_db
+from .routers import auth as auth_router
+from .routers import goal, records, reports
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"

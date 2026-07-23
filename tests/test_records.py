@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from sqlmodel import select
 
-from models import User
+from app.models import User
 
 SAMPLE_RECORD = {
     "date": "2026-07-20",

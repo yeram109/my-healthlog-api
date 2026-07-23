@@ -12,10 +12,10 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
-import auth
-from db import get_session
-from main import app
-from models import User
+from app import auth
+from app.db import get_session
+from app.main import app
+from app.models import User
 
 
 @pytest.fixture(name="session")

@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
-import auth
-from db import get_session
-from models import User, UserCreate, UserRead
+from .. import auth
+from ..db import get_session
+from ..models import User, UserCreate, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

@@ -618,3 +618,21 @@ routers/
 **순환 import 없음**: 라우터들은 `auth`/`storage`/`logic`/`db`/`models`만 import하고, 그 모듈들은 `main`이나 `routers`를 import하지 않는다. `routers/auth.py`가 최상위 `auth.py`를 `import auth`로 참조해도, 파이썬은 절대 경로 기준으로 임포트하므로 `routers.auth`(자기 자신)와 `auth`(최상위 모듈)가 이름이 겹치지 않는다.
 
 **검증**: `pytest tests/ -v` 50개 전체 통과. 실제 서버 기동 후 `/openapi.json`으로 11개 경로(14개 라우트) 전부 등록 확인, `/auth/signup`→`/auth/login`→`/records`·`/goal`·`/reports/weekly` curl 호출로 실동작 확인.
+
+**20.1 백엔드 패키지화 (`app/`)**: 라우터 분리에 이어, 루트에 흩어져 있던 6개 모듈(`main.py`/`auth.py`/`models.py`/`db.py`/`logic.py`/`storage.py`)과 `routers/`, `static/`을 `app/` 패키지 하나로 모았다.
+
+```
+app/
+├── __init__.py
+├── main.py / auth.py / models.py / db.py / logic.py / storage.py
+├── routers/{auth,records,goal,reports}.py
+└── static/{index.html, css/, js/}
+```
+
+- 모듈 간 참조는 상대 import(`from . import auth`, `from ..models import User` 등)로 전환.
+- `db.py`의 `DB_FILE`은 `Path(__file__).parent`가 `app/`로 바뀌었으므로 `.parent.parent`로 한 단계 더 올려 기존과 동일하게 **프로젝트 루트의 `health_log.db`**를 계속 가리키게 했다(DB 파일은 런타임 데이터라 패키지 안에 두지 않음). 기존 DB 재생성 없이 그대로 재사용 가능함을 확인.
+- `main.py`의 `STATIC_DIR = BASE_DIR / "static"`는 `BASE_DIR`이 이제 `app/`이라 `app/static`을 자동으로 가리켜 별도 경로 수정이 필요 없었다.
+- `tests/conftest.py`·`tests/test_records.py`, `scripts/create_admin.py`, `scripts/migrate_json_to_db.py`의 import를 `app.xxx` 절대 경로로 갱신(`scripts/seed_data.py`는 HTTP 클라이언트로만 동작해 변경 불필요).
+- `Dockerfile`의 `CMD`를 `uvicorn main:app` → `uvicorn app.main:app`으로 변경. `WORKDIR /app`(컨테이너 경로)과 패키지명 `app`이 같은 문자열이라 헷갈리기 쉽지만 서로 다른 네임스페이스라 문제 없음.
+
+**검증**: `pytest tests/ -v` 50개 전체 통과. `python -c "from app.db import DB_FILE"`로 기존 DB 파일 경로 유지 확인. 로컬 `uvicorn app.main:app`으로 `/`, `/static/css/style.css`, `/static/js/app.js`, 회원가입→로그인→`/records` 흐름 curl 검증. `docker build` + `docker run`으로 컨테이너 기동, `/api`·정적 파일 응답까지 확인 후 테스트 이미지/컨테이너는 정리.

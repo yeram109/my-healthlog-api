@@ -6,9 +6,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlmodel import Session, select
 
-import auth
-from db import engine, init_db
-from models import User
+from app import auth
+from app.db import engine, init_db
+from app.models import User
 
 
 def create_admin(username: str, password: str) -> None:

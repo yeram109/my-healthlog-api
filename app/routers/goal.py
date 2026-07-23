@@ -3,11 +3,9 @@ from datetime import date as date_type
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
-import auth
-import logic
-import storage
-from db import get_session
-from models import GoalCreate, User
+from .. import auth, logic, storage
+from ..db import get_session
+from ..models import GoalCreate, User
 
 router = APIRouter(prefix="/goal", tags=["goal"])
 

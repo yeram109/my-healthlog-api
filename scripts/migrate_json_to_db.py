@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlmodel import Session
 
-from db import engine, init_db
-from models import Goal, Record
+from app.db import engine, init_db
+from app.models import Goal, Record
 
 DATA_FILE = Path(__file__).parent.parent / "data.json"
 
