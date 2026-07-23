@@ -636,3 +636,21 @@ app/
 - `Dockerfile`의 `CMD`를 `uvicorn main:app` → `uvicorn app.main:app`으로 변경. `WORKDIR /app`(컨테이너 경로)과 패키지명 `app`이 같은 문자열이라 헷갈리기 쉽지만 서로 다른 네임스페이스라 문제 없음.
 
 **검증**: `pytest tests/ -v` 50개 전체 통과. `python -c "from app.db import DB_FILE"`로 기존 DB 파일 경로 유지 확인. 로컬 `uvicorn app.main:app`으로 `/`, `/static/css/style.css`, `/static/js/app.js`, 회원가입→로그인→`/records` 흐름 curl 검증. `docker build` + `docker run`으로 컨테이너 기동, `/api`·정적 파일 응답까지 확인 후 테스트 이미지/컨테이너는 정리.
+
+---
+
+## 21. 입력값 범위 검증
+
+**목적**: `RecordCreate`(=`RecordBase`)에 필드별 범위 제약과 필드 간 교차 검증을 추가해, 물리적으로 불가능한 값(키 1000cm, 몸무게 -100kg 등)을 422로 걸러낸다. 판단 대상은 "명백히 불가능한 값"뿐이고, "고도비만·중증 저혈당처럼 극단적이지만 실존 가능한 값"은 통과시켜 기존 `warnings` 시스템의 몫으로 남긴다.
+
+**범위**: weight 20~300kg · height 100~250cm · systolic 60~250mmHg · diastolic 30~150mmHg · blood_sugar 20~600mg/dL · steps 0~100,000 · sleep_hours 0~24 · date 1900-01-01~오늘(미래 불가). `sqlmodel.Field(ge=..., le=...)`로 필드별 제약을 걸었다.
+
+**교차 검증**: 이완기 혈압이 수축기 혈압 이상이면 거부(생리적으로 불가능한 조합). `diastolic` 필드의 `field_validator`에서 `ValidationInfo.data`로 이미 검증된 `systolic` 값을 참조한다 — pydantic v2는 필드를 선언 순서대로 검증하므로 `systolic`이 `diastolic`보다 먼저 선언돼 있어야 하고(기존에도 이 순서), `info.data`에는 이미 통과한 필드만 들어있다.
+
+**적용 범위**: `RecordBase`에 추가했기 때문에 `RecordCreate`(POST/PUT 요청 바디)와 테이블 모델 `Record` 양쪽에 다 적용되지만, DB에서 기존 행을 읽어올 때는 SQLAlchemy ORM 로딩 경로라 Pydantic `__init__` 검증을 다시 타지 않아 기존 데이터가 새 규칙으로 재검증되며 깨지는 일은 없다. `Field(ge=/le=)`는 SQLModel에서 SQL `CHECK` 제약으로 내려가지 않고 Pydantic 레벨에서만 동작하므로, 이번 변경은 **스키마 변경이 아니라 DB 재생성이 필요 없다**(17장 원칙과 무관).
+
+**기존 테스트와의 충돌**: `test_goal_achievement_*` 테스트 2개가 "오늘"과 "내일" 날짜로 두 기록을 만들어 최신값 비교를 시뮬레이션하고 있었는데, 미래 날짜 금지 규칙과 충돌했다. 목표 달성률은 `record.date >= goal.set_date`(항상 오늘)인 기록만 대상으로 하므로, 두 번째 기록 날짜를 "내일" 대신 **같은 날("오늘")**로 바꿔서 해결했다 — `sorted(key=date)`가 안정 정렬이라 날짜가 같으면 POST한 순서(입력 순서)가 그대로 유지되어 "시작값 vs 현재값" 비교 의도는 동일하게 보존된다.
+
+**테스트**: 범위 밖 값 14종(각 필드 상/하한 초과) 422, 경계값 12종(각 필드 상/하한 정확히) 201, 미래 날짜, 1900년 이전 날짜, 이완기≥수축기(동일값 포함) 422 — pytest 30개 신규 추가(총 80개 통과).
+
+**검증**: `pytest tests/ -v` 80개 전체 통과. 실서버(`uvicorn app.main:app`)에 미래 날짜/이완기≥수축기/음수 체중/키 1000cm 요청을 curl로 보내 422 확인, 정상 값은 201 확인. `scripts/seed_data.py --days 60`으로 4명×60일(240건) 생성해 기존 seed 값들이 새 범위와 교차검증을 모두 통과하는지 실제로 재확인.

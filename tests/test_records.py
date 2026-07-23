@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+import pytest
 from sqlmodel import select
 
 from app.models import User
@@ -155,6 +156,78 @@ def test_invalid_date_format_returns_422(client, auth_headers):
     bad_record = {**SAMPLE_RECORD, "date": "2026/07/20"}
     res = client.post("/records", json=bad_record, headers=auth_headers("alice"))
     assert res.status_code == 422
+
+
+def test_future_date_returns_422(client, auth_headers):
+    future_record = {**SAMPLE_RECORD, "date": (date.today() + timedelta(days=1)).isoformat()}
+    res = client.post("/records", json=future_record, headers=auth_headers("alice"))
+    assert res.status_code == 422
+
+
+def test_date_before_1900_returns_422(client, auth_headers):
+    old_record = {**SAMPLE_RECORD, "date": "1899-12-31"}
+    res = client.post("/records", json=old_record, headers=auth_headers("alice"))
+    assert res.status_code == 422
+
+
+def test_diastolic_greater_than_systolic_returns_422(client, auth_headers):
+    bad_record = {**SAMPLE_RECORD, "systolic": 110, "diastolic": 120}
+    res = client.post("/records", json=bad_record, headers=auth_headers("alice"))
+    assert res.status_code == 422
+
+
+def test_diastolic_equal_to_systolic_returns_422(client, auth_headers):
+    bad_record = {**SAMPLE_RECORD, "systolic": 100, "diastolic": 100}
+    res = client.post("/records", json=bad_record, headers=auth_headers("alice"))
+    assert res.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("weight", 19.9),
+        ("weight", 300.1),
+        ("height", 99.9),
+        ("height", 250.1),
+        ("systolic", 59),
+        ("systolic", 251),
+        ("diastolic", 29),
+        ("diastolic", 151),
+        ("blood_sugar", 19),
+        ("blood_sugar", 601),
+        ("steps", -1),
+        ("steps", 100001),
+        ("sleep_hours", -0.1),
+        ("sleep_hours", 24.1),
+    ],
+)
+def test_out_of_range_field_returns_422(client, auth_headers, field, value):
+    bad_record = {**SAMPLE_RECORD, field: value}
+    res = client.post("/records", json=bad_record, headers=auth_headers("alice"))
+    assert res.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("weight", 20),
+        ("weight", 300),
+        ("height", 100),
+        ("height", 250),
+        ("systolic", 250),
+        ("diastolic", 30),
+        ("blood_sugar", 20),
+        ("blood_sugar", 600),
+        ("steps", 0),
+        ("steps", 100000),
+        ("sleep_hours", 0),
+        ("sleep_hours", 24),
+    ],
+)
+def test_boundary_field_value_is_accepted(client, auth_headers, field, value):
+    ok_record = {**SAMPLE_RECORD, field: value}
+    res = client.post("/records", json=ok_record, headers=auth_headers("alice"))
+    assert res.status_code == 201
 
 
 def test_create_record_includes_bmi_and_categories(client, auth_headers):
@@ -347,7 +420,6 @@ def test_goal_achievement_none_without_records_since_goal_set(client, auth_heade
 def test_goal_achievement_calculated_from_records_since_goal_set(client, auth_headers):
     client.put("/goal", json=GOAL_PAYLOAD, headers=auth_headers("alice"))
     today_str = date.today().isoformat()
-    tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
 
     client.post(
         "/records",
@@ -356,7 +428,7 @@ def test_goal_achievement_calculated_from_records_since_goal_set(client, auth_he
     )
     client.post(
         "/records",
-        json={**SAMPLE_RECORD, "date": tomorrow_str, "weight": 67, "systolic": 125, "diastolic": 85},
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 67, "systolic": 125, "diastolic": 85},
         headers=auth_headers("alice"),
     )
 
@@ -370,7 +442,6 @@ def test_goal_achievement_calculated_from_records_since_goal_set(client, auth_he
 def test_goal_achievement_clamped_at_100_when_exceeded(client, auth_headers):
     client.put("/goal", json=GOAL_PAYLOAD, headers=auth_headers("alice"))
     today_str = date.today().isoformat()
-    tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
 
     client.post(
         "/records",
@@ -379,7 +450,7 @@ def test_goal_achievement_clamped_at_100_when_exceeded(client, auth_headers):
     )
     client.post(
         "/records",
-        json={**SAMPLE_RECORD, "date": tomorrow_str, "weight": 50, "systolic": 100, "diastolic": 70},
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 50, "systolic": 100, "diastolic": 70},
         headers=auth_headers("alice"),
     )
 
