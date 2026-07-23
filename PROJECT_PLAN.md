@@ -594,3 +594,27 @@ static/
 **인증**: 모든 fetch에 기존과 동일하게 `Authorization: Bearer` 헤더를 붙이고, 401이면 로그인 화면으로 돌아간다(기존 로직 그대로 유지, 4개 탭에 공통 적용).
 
 **검증 한계**: 이 세션의 브라우저 자동화 도구가 스크린샷/뷰포트 측정을 정상적으로 수행하지 못해(패널이 컴포지팅되지 않는 도구 자체의 문제), 반응형 레이아웃과 차트의 실제 렌더링 모습은 시각적으로 확인하지 못했다. 데이터 바인딩·탭 전환·CRUD·콘솔 에러 없음은 DOM/네트워크 응답 기준으로 검증했다.
+
+---
+
+## 20. 백엔드 라우터 분리
+
+**목적**: 파일 수가 늘면서 `main.py` 하나가 인증/기록/목표/리포트 4개 도메인의 라우트를 모두 담당하게 되어, 도메인별로 `routers/` 패키지로 분리했다. (파일 개수 자체보다, `main.py`가 여러 관심사를 섞고 있는 것이 실제 유지보수 병목이라고 판단.)
+
+**구조**:
+```
+routers/
+├── auth.py     (APIRouter prefix="/auth")  — /auth/signup, /auth/login, /auth/me
+├── records.py  (APIRouter, prefix 없음)     — /records, /records/{id}, /search, /stats
+├── goal.py     (APIRouter prefix="/goal")  — PUT/GET /goal
+└── reports.py  (APIRouter prefix="/reports") — /reports/weekly
+```
+`records.py`는 `/search`, `/stats`가 `/records` 하위 경로가 아니라서 공통 prefix 없이 각 라우트에 전체 경로를 직접 지정했다. `main.py`는 `lifespan`(SECRET_KEY 체크 + `init_db`), `FastAPI` 앱 생성, 정적 파일 마운트, 4개 라우터 등록, `GET /`·`GET /api`만 남겼다.
+
+**같이 이동한 것**: `/stats`가 쓰던 `BMI_CATEGORIES`/`BP_CATEGORIES`/`SUGAR_CATEGORIES` 상수와 `/search`가 쓰던 `_validate_date_param` 헬퍼는 둘 다 `routers/records.py`로 옮겼다.
+
+**영향 없음 확인**: `tests/conftest.py`는 `from main import app`만 하고 있어 테스트 코드 변경이 필요 없었다(50개 전체 통과). `Dockerfile`은 `COPY . .` + `uvicorn main:app`이라 그대로 유효하다. `scripts/`도 `main`을 import하지 않아 영향 없다.
+
+**순환 import 없음**: 라우터들은 `auth`/`storage`/`logic`/`db`/`models`만 import하고, 그 모듈들은 `main`이나 `routers`를 import하지 않는다. `routers/auth.py`가 최상위 `auth.py`를 `import auth`로 참조해도, 파이썬은 절대 경로 기준으로 임포트하므로 `routers.auth`(자기 자신)와 `auth`(최상위 모듈)가 이름이 겹치지 않는다.
+
+**검증**: `pytest tests/ -v` 50개 전체 통과. 실제 서버 기동 후 `/openapi.json`으로 11개 경로(14개 라우트) 전부 등록 확인, `/auth/signup`→`/auth/login`→`/records`·`/goal`·`/reports/weekly` curl 호출로 실동작 확인.

@@ -127,12 +127,17 @@ python scripts/migrate_json_to_db.py
 
 ```
 health-log-api/
-├── main.py                      # FastAPI 앱, 라우터, 정적 파일 마운트
+├── main.py                      # FastAPI 앱 생성, lifespan, 정적 파일 마운트, 라우터 등록
 ├── auth.py                       # 비밀번호 해싱, JWT 발급/검증, get_current_user 의존성
 ├── models.py                      # SQLModel (User/Record/Goal 테이블 + Create/Read 스키마)
 ├── db.py                           # SQLite 엔진, init_db(), get_session() 의존성
 ├── logic.py                         # BMI·걸음수·수면 계산/분류, 경고 생성, 목표 달성률
 ├── storage.py                        # 세션 기반 CRUD, 소유권 체크, 목표 저장
+├── routers/
+│   ├── auth.py                        # /auth/signup, /auth/login, /auth/me
+│   ├── records.py                     # /records, /search, /stats
+│   ├── goal.py                        # /goal
+│   └── reports.py                     # /reports/weekly
 ├── static/
 │   ├── index.html                     # 로그인/회원가입 + 탭 네비 + 4개 뷰(대시보드/기록/목표/리포트) 마크업
 │   ├── css/style.css                    # 색상 변수, 탭/배지/카드/차트/반응형 스타일
