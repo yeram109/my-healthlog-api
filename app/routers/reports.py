@@ -13,10 +13,11 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 @router.get("/weekly")
 def get_weekly_report(
+    target_user: str | None = None,
     current_user: User = Depends(auth.get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
-    records = [r.model_dump() for r in storage.get_records(session, current_user)]
+    records = [r.model_dump() for r in storage.get_records(session, current_user, target_user)]
     today = date_type.today()
     this_week_start = (today - timedelta(days=7)).isoformat()
     last_week_start = (today - timedelta(days=14)).isoformat()

@@ -116,3 +116,19 @@ def calculate_goal_achievement(goal: dict[str, Any], records: list[dict[str, Any
         "systolic_percent": calculate_achievement_percent(start["systolic"], current["systolic"], goal["target_systolic"]),
         "diastolic_percent": calculate_achievement_percent(start["diastolic"], current["diastolic"], goal["target_diastolic"]),
     }
+
+
+RISK_BMI_CATEGORIES = {"비만"}
+RISK_BP_CATEGORIES = {"고혈압"}
+RISK_SUGAR_CATEGORIES = {"당뇨 의심"}
+CAUTION_BMI_CATEGORIES = {"과체중", "저체중"}
+CAUTION_BP_CATEGORIES = {"주의"}
+CAUTION_SUGAR_CATEGORIES = {"공복혈당장애"}
+
+
+def summarize_user_status(bmi_category: str, bp_category: str, sugar_category: str) -> str:
+    if bmi_category in RISK_BMI_CATEGORIES or bp_category in RISK_BP_CATEGORIES or sugar_category in RISK_SUGAR_CATEGORIES:
+        return "위험"
+    if bmi_category in CAUTION_BMI_CATEGORIES or bp_category in CAUTION_BP_CATEGORIES or sugar_category in CAUTION_SUGAR_CATEGORIES:
+        return "주의필요"
+    return "정상"

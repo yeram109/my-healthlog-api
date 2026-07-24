@@ -1,6 +1,8 @@
 :root {
   --accent: #2a78d6;
   --accent-bg: #e6f1fb;
+  --admin-accent: #7c3aed;
+  --admin-accent-bg: #f1e9fd;
   --success-bg: #eaf3de; --success-text: #3b6d11;
   --warning-bg: #faeeda; --warning-text: #854f0b;
   --danger-bg: #fcebeb;  --danger-text: #a32d2d;
@@ -9,6 +11,12 @@
   --border: #e5e7eb;
   --surface-0: #ffffff;
   --surface-1: #f7f7f5;
+}
+
+/* 관리자 모드: #app-section에 이 클래스가 붙으면 --accent 계열이 보라색으로 바뀌어 화면 전체(탭 active, 배지, 프로그레스바, 버튼)에 자동 반영됨 */
+#app-section.admin-mode {
+  --accent: var(--admin-accent);
+  --accent-bg: var(--admin-accent-bg);
 }
 
 html { color-scheme: light; }
@@ -79,6 +87,36 @@ h3 { font-size: 0.95rem; margin: 0 0 8px; color: var(--text-secondary); }
 /* ---------- app shell ---------- */
 #app-section { display: none; }
 
+.admin-banner {
+  display: none;
+  background: var(--admin-accent-bg);
+  color: var(--admin-accent);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+}
+#app-section.admin-mode .admin-banner { display: block; }
+
+/* ---------- 조회 대상 (관리자 전용) ---------- */
+.target-user-select { display: none; margin-bottom: 12px; }
+#app-section.admin-mode .target-user-select { display: block; }
+.target-user-select label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.target-user-select select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
 .app-header {
   display: flex;
   align-items: center;
@@ -118,6 +156,9 @@ h3 { font-size: 0.95rem; margin: 0 0 8px; color: var(--text-secondary); }
   border-bottom-color: var(--accent);
   font-weight: 600;
 }
+
+#tab-btn-users { display: none; }
+#app-section.admin-mode #tab-btn-users { display: inline-block; }
 
 .view { display: none; }
 .view.active { display: block; }
@@ -207,6 +248,8 @@ form.data-form .full { grid-column: 1 / -1; }
 .kpi-card .kpi-value { font-size: 1.4rem; font-weight: 700; margin: 4px 0; }
 .kpi-card .kpi-delta { font-size: 0.8rem; color: var(--text-secondary); }
 
+#app-section.admin-mode #dashboard-user-charts { display: none; }
+
 /* ---------- charts ---------- */
 .chart-wrapper {
   position: relative;
@@ -261,6 +304,23 @@ form.data-form .full { grid-column: 1 / -1; }
   color: var(--text-secondary);
   margin: -4px 0 12px;
 }
+
+/* ---------- 사용자 관리 (관리자 전용) ---------- */
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 0.88rem;
+  flex-wrap: wrap;
+}
+
+.user-row .ur-name { font-weight: 600; min-width: 100px; }
+.user-row .ur-meta { color: var(--text-secondary); font-size: 0.8rem; }
+.user-row .ur-actions { margin-left: auto; }
 
 /* ---------- goal view ---------- */
 .goal-card {

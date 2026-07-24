@@ -15,6 +15,7 @@
 - 목표 관리: 목표 체중/혈압 설정 및 달성률 조회 (`PUT`/`GET /goal`)
 - 주간 리포트: 이번주 vs 지난주 평균 비교, 평균 걸음 수/수면 포함 (`GET /reports/weekly`)
 - 탭 기반 대시보드 화면 (대시보드/기록/목표/리포트), Chart.js로 체중·혈압·걸음 수 추이 시각화, 분류 결과 색상 배지
+- 관리자 전용 대시보드: 전체 사용자 집계 지표, 사용자 관리 화면(가입일/기록 수/건강 상태), 다른 사용자 데이터 조회(`target_user`), 보라색 테마로 시각적 구분
 - 개발용 테스트 데이터 자동 생성 스크립트 (`scripts/seed_data.py`)
 
 ## 기술 스택
@@ -100,16 +101,19 @@ python scripts/migrate_json_to_db.py
 | POST | `/auth/signup` | 회원가입 (username 중복이면 400) |
 | POST | `/auth/login` | 로그인 (`x-www-form-urlencoded`), 성공 시 `{access_token, token_type}`. 탈퇴 계정이면 403 |
 | DELETE | `/auth/me` | 회원탈퇴 (계정 비활성화, 기록/목표는 보존). 기존 토큰은 즉시 무효화됨 |
+| GET | `/auth/me` | 현재 로그인한 사용자 정보(`username`/`id`/`is_admin`) 조회 |
 | POST | `/records` | 기록 추가 (201) |
-| GET | `/records` | 기록 목록 조회 (본인 것만, `is_admin`은 전체) |
+| GET | `/records?target_user=` | 기록 목록 조회 (본인 것만, `is_admin`은 전체. `target_user`로 특정 사용자만 조회 가능 — 일반 사용자가 보내면 무시) |
 | GET | `/records/{id}` | 기록 단건 조회 (없거나 타인 기록이면 404) |
 | PUT | `/records/{id}` | 기록 수정 (없으면 404, 타인 기록이면 403) |
 | DELETE | `/records/{id}` | 기록 삭제 (없으면 404, 타인 기록이면 403) |
-| GET | `/search?start=&end=` | 기간별 검색 (`start > end`면 422) |
-| GET | `/stats` | 통계 (평균, 카테고리별 카운트, 0건이면 null) |
+| GET | `/search?start=&end=&target_user=` | 기간별 검색 (`start > end`면 422) |
+| GET | `/stats?target_user=` | 통계 (평균, 카테고리별 카운트, 0건이면 null) |
 | PUT | `/goal` | 목표 체중/혈압 설정 |
-| GET | `/goal` | 목표 + 달성률 조회 (목표 없으면 `{"goal": null}`) |
-| GET | `/reports/weekly` | 이번주/지난주 평균과 증감 (데이터 부족 시 null) |
+| GET | `/goal?target_user=` | 목표 + 달성률 조회 (목표 없으면 `{"goal": null}`) |
+| GET | `/reports/weekly?target_user=` | 이번주/지난주 평균과 증감 (데이터 부족 시 null) |
+| GET | `/admin/users` | (관리자 전용, 비관리자 403) 전체 사용자 목록 + 가입일/기록 수/건강 상태 요약 |
+| GET | `/admin/stats` | (관리자 전용, 비관리자 403) 총 사용자 수/오늘 등록된 기록 수/위험군 사용자 수/전체 평균 BMI |
 
 ## 건강 분류 기준
 
@@ -155,9 +159,10 @@ health-log-api/
 │   │   ├── auth.py                          # /auth/signup, /auth/login, /auth/me
 │   │   ├── records.py                       # /records, /search, /stats
 │   │   ├── goal.py                          # /goal
-│   │   └── reports.py                       # /reports/weekly
+│   │   ├── reports.py                       # /reports/weekly
+│   │   └── admin.py                         # /admin/users, /admin/stats (관리자 전용)
 │   └── static/
-│       ├── index.html                       # 로그인/회원가입 + 탭 네비 + 4개 뷰(대시보드/기록/목표/리포트) 마크업
+│       ├── index.html                       # 로그인/회원가입 + 탭 네비 + 5개 뷰(대시보드/기록/목표/리포트/사용자 관리) 마크업
 │       ├── css/style.css                      # 색상 변수, 탭/배지/카드/차트/반응형 스타일
 │       └── js/app.js                           # 인증, 탭 전환(lazy load), CRUD, Chart.js 렌더링
 ├── health_log.db                # SQLite DB 파일 (프로젝트 루트, app 패키지 밖)

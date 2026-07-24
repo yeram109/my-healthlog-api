@@ -35,10 +35,11 @@ def create_record(
 
 @router.get("/records")
 def list_records(
+    target_user: str | None = None,
     current_user: User = Depends(auth.get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
-    records = storage.get_records(session, current_user)
+    records = storage.get_records(session, current_user, target_user)
     enriched = [logic.enrich_record(r.model_dump()) for r in records]
     return {"count": len(enriched), "records": enriched}
 
@@ -90,6 +91,7 @@ def delete_record(
 def search_records(
     start: str | None = None,
     end: str | None = None,
+    target_user: str | None = None,
     current_user: User = Depends(auth.get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
@@ -98,17 +100,18 @@ def search_records(
     if start is not None and end is not None and start > end:
         raise HTTPException(status_code=422, detail="start가 end보다 늦을 수 없습니다")
 
-    records = storage.search_records(session, current_user, start, end)
+    records = storage.search_records(session, current_user, start, end, target_user)
     enriched = [logic.enrich_record(r.model_dump()) for r in records]
     return {"count": len(enriched), "records": enriched}
 
 
 @router.get("/stats")
 def get_stats(
+    target_user: str | None = None,
     current_user: User = Depends(auth.get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
-    records = [r.model_dump() for r in storage.get_records(session, current_user)]
+    records = [r.model_dump() for r in storage.get_records(session, current_user, target_user)]
     bmi_counts = {c: 0 for c in BMI_CATEGORIES}
     bp_counts = {c: 0 for c in BP_CATEGORIES}
     sugar_counts = {c: 0 for c in SUGAR_CATEGORIES}

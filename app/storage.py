@@ -5,16 +5,27 @@ from sqlmodel import Session, select
 from .models import Goal, Record, User
 
 
-def get_records(session: Session, user: User) -> list[Record]:
+def _resolve_target_user_id(session: Session, target_user: str) -> int:
+    target = session.exec(select(User).where(User.username == target_user)).first()
+    return target.id if target is not None else -1
+
+
+def get_records(session: Session, user: User, target_user: str | None = None) -> list[Record]:
     query = select(Record)
-    if not user.is_admin:
+    if user.is_admin and target_user:
+        query = query.where(Record.user_id == _resolve_target_user_id(session, target_user))
+    elif not user.is_admin:
         query = query.where(Record.user_id == user.id)
     return list(session.exec(query).all())
 
 
-def search_records(session: Session, user: User, start: str | None, end: str | None) -> list[Record]:
+def search_records(
+    session: Session, user: User, start: str | None, end: str | None, target_user: str | None = None
+) -> list[Record]:
     query = select(Record)
-    if not user.is_admin:
+    if user.is_admin and target_user:
+        query = query.where(Record.user_id == _resolve_target_user_id(session, target_user))
+    elif not user.is_admin:
         query = query.where(Record.user_id == user.id)
     if start is not None:
         query = query.where(Record.date >= start)
@@ -25,6 +36,10 @@ def search_records(session: Session, user: User, start: str | None, end: str | N
 
 def get_record_by_id(session: Session, record_id: int) -> Record | None:
     return session.get(Record, record_id)
+
+
+def get_records_by_user_id(session: Session, user_id: int) -> list[Record]:
+    return list(session.exec(select(Record).where(Record.user_id == user_id)).all())
 
 
 def add_record(session: Session, record: dict[str, Any], user: User) -> Record:
@@ -60,7 +75,12 @@ def check_ownership(record: Record, user: User) -> bool:
     return user.is_admin or record.user_id == user.id
 
 
-def get_goal(session: Session, user: User) -> Goal | None:
+def get_goal(session: Session, user: User, target_user: str | None = None) -> Goal | None:
+    if user.is_admin and target_user:
+        target = session.exec(select(User).where(User.username == target_user)).first()
+        if target is None:
+            return None
+        return session.get(Goal, target.id)
     return session.get(Goal, user.id)
 
 

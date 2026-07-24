@@ -28,13 +28,14 @@ def set_goal(
 
 @router.get("")
 def get_goal(
+    target_user: str | None = None,
     current_user: User = Depends(auth.get_current_user),
     session: Session = Depends(get_session),
 ) -> dict:
-    goal = storage.get_goal(session, current_user)
+    goal = storage.get_goal(session, current_user, target_user)
     if goal is None:
         return {"goal": None}
-    records = [r.model_dump() for r in storage.get_records(session, current_user)]
+    records = [r.model_dump() for r in storage.get_records(session, current_user, target_user)]
     goal_dict = goal.model_dump()
     achievement = logic.calculate_goal_achievement(goal_dict, records)
     return {"goal": goal_dict, "achievement": achievement}

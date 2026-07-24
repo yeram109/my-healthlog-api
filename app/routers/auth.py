@@ -50,3 +50,8 @@ def delete_account(
     session.add(current_user)
     session.commit()
     return {"message": "회원 탈퇴가 완료되었습니다"}
+
+
+@router.get("/me", response_model=UserRead)
+def read_current_user(current_user: User = Depends(auth.get_current_user)) -> User:
+    return current_user

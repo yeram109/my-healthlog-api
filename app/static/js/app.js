@@ -16,11 +16,20 @@ const BADGE_CLASS = {
   "당뇨 의심": "badge-danger",
 };
 
+const STATUS_BADGE_CLASS = {
+  "정상": "badge-success",
+  "주의필요": "badge-warning",
+  "위험": "badge-danger",
+};
+
+const TARGET_USER_SELECT_IDS = ["records-target-user", "goal-target-user", "report-target-user"];
+
 let editingId = null;
 let weightChart = null;
 let bpChart = null;
 let stepsChart = null;
-const tabLoaded = { dashboard: false, records: false, goal: false, report: false };
+let isAdminUser = false;
+const tabLoaded = { dashboard: false, records: false, goal: false, report: false, users: false };
 
 /* ---------- auth helpers ---------- */
 
@@ -50,12 +59,47 @@ function showAuth() {
   document.getElementById("signup-view").style.display = "none";
 }
 
-function showApp() {
+async function showApp() {
   document.getElementById("auth-section").style.display = "none";
   document.getElementById("app-section").style.display = "block";
   document.getElementById("current-username").textContent = localStorage.getItem(AUTH_USERNAME_KEY) || "";
+
+  const meRes = await fetch("/auth/me", { headers: getAuthHeaders() });
+  if (isUnauthorized(meRes)) return;
+  if (!meRes.ok) {
+    showError(meRes.status, await meRes.json());
+    return;
+  }
+  const me = await meRes.json();
+  isAdminUser = me.is_admin;
+  document.getElementById("app-section").classList.toggle("admin-mode", isAdminUser);
+
+  if (isAdminUser) {
+    await loadAdminUsernameOptions();
+  }
+
   Object.keys(tabLoaded).forEach((key) => { tabLoaded[key] = false; });
   switchTab("dashboard");
+}
+
+async function loadAdminUsernameOptions() {
+  const res = await fetch("/admin/users", { headers: getAuthHeaders() });
+  if (isUnauthorized(res)) return;
+  if (!res.ok) return;
+  const data = await res.json();
+  const usernames = data.users.map((u) => u.username);
+  const optionsHtml = `<option value="">전체 사용자</option>` +
+    usernames.map((n) => `<option value="${n}">${n}</option>`).join("");
+  TARGET_USER_SELECT_IDS.forEach((id) => {
+    const select = document.getElementById(id);
+    if (select) select.innerHTML = optionsHtml;
+  });
+}
+
+function currentTargetUser(selectId) {
+  if (!isAdminUser) return "";
+  const el = document.getElementById(selectId);
+  return el && el.value ? el.value : "";
 }
 
 function isUnauthorized(res) {
@@ -102,7 +146,7 @@ async function handleLogin(event) {
   const data = await res.json();
   saveAuth(data.access_token, form.username.value);
   form.reset();
-  showApp();
+  await showApp();
 }
 
 async function handleSignup(event) {
@@ -140,7 +184,7 @@ async function handleSignup(event) {
   const loginData = await loginRes.json();
   saveAuth(loginData.access_token, username);
   form.reset();
-  showApp();
+  await showApp();
 }
 
 function handleLogout() {
@@ -179,33 +223,37 @@ function switchTab(tabName) {
 function loadTab(tabName) {
   if (tabLoaded[tabName]) return;
   tabLoaded[tabName] = true;
-  if (tabName === "dashboard") loadDashboard();
+  if (tabName === "dashboard") { isAdminUser ? loadAdminDashboard() : loadDashboard(); }
   else if (tabName === "records") loadRecordsList();
   else if (tabName === "goal") loadGoalView();
   else if (tabName === "report") loadReportView();
+  else if (tabName === "users") loadAdminUsersView();
 }
 
 function invalidateAndReload() {
   tabLoaded.dashboard = false;
   tabLoaded.report = false;
   tabLoaded.goal = false;
+  tabLoaded.users = false;
   loadRecordsList();
 }
 
 /* ---------- shared helpers ---------- */
 
-async function fetchAllRecords() {
-  const res = await fetch("/records", { headers: getAuthHeaders() });
+async function fetchAllRecords(targetUser) {
+  const qs = targetUser ? `?target_user=${encodeURIComponent(targetUser)}` : "";
+  const res = await fetch(`/records${qs}`, { headers: getAuthHeaders() });
   if (isUnauthorized(res)) return null;
   const data = await res.json();
   return data.records;
 }
 
-async function fetchRecordsSince(days) {
+async function fetchRecordsSince(days, targetUser) {
   const start = new Date();
   start.setDate(start.getDate() - (days - 1));
   const startStr = start.toISOString().slice(0, 10);
-  const res = await fetch(`/search?start=${startStr}`, { headers: getAuthHeaders() });
+  const targetQs = targetUser ? `&target_user=${encodeURIComponent(targetUser)}` : "";
+  const res = await fetch(`/search?start=${startStr}${targetQs}`, { headers: getAuthHeaders() });
   if (isUnauthorized(res)) return null;
   const data = await res.json();
   return data.records;
@@ -225,6 +273,36 @@ async function loadDashboard() {
   renderKpiCards(sorted);
   renderWeightChart(sorted);
   renderBpChart(sorted);
+}
+
+async function loadAdminDashboard() {
+  const res = await fetch("/admin/stats", { headers: getAuthHeaders() });
+  if (isUnauthorized(res)) return;
+  if (!res.ok) {
+    showError(res.status, await res.json());
+    return;
+  }
+  const stats = await res.json();
+  renderAdminKpiCards(stats);
+}
+
+function renderAdminKpiCards(stats) {
+  const cards = document.querySelectorAll("#kpi-grid .kpi-card");
+  cards[0].querySelector(".kpi-label").textContent = "총 사용자 수";
+  document.getElementById("kpi-weight-value").textContent = stats.total_users;
+  document.getElementById("kpi-weight-delta").textContent = "";
+
+  cards[1].querySelector(".kpi-label").textContent = "오늘 등록된 기록";
+  document.getElementById("kpi-bmi-value").textContent = stats.today_records;
+  document.getElementById("kpi-bmi-badge").innerHTML = "";
+
+  cards[2].querySelector(".kpi-label").textContent = "위험군 사용자";
+  document.getElementById("kpi-bp-value").textContent = stats.at_risk_users;
+  document.getElementById("kpi-bp-badge").innerHTML = "";
+
+  cards[3].querySelector(".kpi-label").textContent = "전체 평균 BMI";
+  document.getElementById("kpi-sugar-value").textContent = stats.avg_bmi_all === null ? "-" : stats.avg_bmi_all;
+  document.getElementById("kpi-sugar-badge").innerHTML = "";
 }
 
 function renderKpiCards(sorted) {
@@ -342,7 +420,13 @@ function renderBpChart(sorted) {
 /* ---------- records view ---------- */
 
 async function loadRecordsList() {
-  const records = await fetchAllRecords();
+  const targetUser = currentTargetUser("records-target-user");
+
+  const toggleFormBtn = document.getElementById("toggle-form-btn");
+  toggleFormBtn.style.display = targetUser ? "none" : "inline-block";
+  if (targetUser) hideRecordForm();
+
+  const records = await fetchAllRecords(targetUser);
   if (records === null) return;
   const sorted = [...records].sort((a, b) => b.date.localeCompare(a.date));
   const container = document.getElementById("record-list");
@@ -509,7 +593,9 @@ async function submitForm(event) {
 /* ---------- goal view ---------- */
 
 async function loadGoalView() {
-  const res = await fetch("/goal", { headers: getAuthHeaders() });
+  const targetUser = currentTargetUser("goal-target-user");
+  const qs = targetUser ? `?target_user=${encodeURIComponent(targetUser)}` : "";
+  const res = await fetch(`/goal${qs}`, { headers: getAuthHeaders() });
   if (isUnauthorized(res)) return;
   const data = await res.json();
   renderGoalDisplay(data);
@@ -578,12 +664,14 @@ async function submitGoal(event) {
 /* ---------- report view ---------- */
 
 async function loadReportView() {
-  const res = await fetch("/reports/weekly", { headers: getAuthHeaders() });
+  const targetUser = currentTargetUser("report-target-user");
+  const qs = targetUser ? `?target_user=${encodeURIComponent(targetUser)}` : "";
+  const res = await fetch(`/reports/weekly${qs}`, { headers: getAuthHeaders() });
   if (isUnauthorized(res)) return;
   const data = await res.json();
   renderReportStats(data);
 
-  const stepsRecords = await fetchRecordsSince(7);
+  const stepsRecords = await fetchRecordsSince(7, targetUser);
   if (stepsRecords === null) return;
   renderStepsChart(stepsRecords);
 }
@@ -644,6 +732,56 @@ function renderStepsChart(records) {
   });
 }
 
+/* ---------- 사용자 관리 (관리자 전용) ---------- */
+
+async function loadAdminUsersView() {
+  const res = await fetch("/admin/users", { headers: getAuthHeaders() });
+  if (isUnauthorized(res)) return;
+  if (!res.ok) {
+    showError(res.status, await res.json());
+    return;
+  }
+  const data = await res.json();
+  const container = document.getElementById("admin-users-list");
+  container.innerHTML = "";
+  if (data.users.length === 0) {
+    container.innerHTML = `<p class="empty-state">사용자가 없습니다.</p>`;
+    return;
+  }
+  for (const u of data.users) {
+    container.appendChild(renderUserRow(u));
+  }
+}
+
+function renderUserRow(user) {
+  const row = document.createElement("div");
+  row.className = "user-row";
+  const statusCls = STATUS_BADGE_CLASS[user.status] || "badge-success";
+  row.innerHTML = `
+    <span class="ur-name">${user.username}</span>
+    <span class="ur-meta">가입일 ${user.created_at}</span>
+    <span class="ur-meta">기록 ${user.record_count}건</span>
+    <span class="badge ${statusCls}">${user.status}</span>
+  `;
+
+  const viewBtn = document.createElement("button");
+  viewBtn.type = "button";
+  viewBtn.className = "icon-btn ur-actions";
+  viewBtn.textContent = "보기";
+  viewBtn.addEventListener("click", () => viewUserRecords(user.username));
+
+  row.appendChild(viewBtn);
+  return row;
+}
+
+function viewUserRecords(username) {
+  const select = document.getElementById("records-target-user");
+  if (select) select.value = username;
+  tabLoaded.records = true;
+  switchTab("records");
+  loadRecordsList();
+}
+
 /* ---------- wire up ---------- */
 
 document.getElementById("show-signup-btn").addEventListener("click", () => {
@@ -666,6 +804,10 @@ document.getElementById("goal-form").addEventListener("submit", submitGoal);
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
+
+document.getElementById("records-target-user").addEventListener("change", loadRecordsList);
+document.getElementById("goal-target-user").addEventListener("change", loadGoalView);
+document.getElementById("report-target-user").addEventListener("change", loadReportView);
 
 if (getToken()) {
   showApp();

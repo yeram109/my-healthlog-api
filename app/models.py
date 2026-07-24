@@ -14,6 +14,7 @@ class User(UserBase, table=True):
     hashed_password: str
     is_admin: bool = False
     is_active: bool = True
+    created_at: str = Field(default_factory=lambda: date_type.today().isoformat())
 
 
 class UserCreate(UserBase):

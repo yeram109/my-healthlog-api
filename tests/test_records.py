@@ -539,3 +539,138 @@ def test_sleep_category_boundary_values(client, auth_headers):
     assert sleep_category(7.0) == "적정"
     assert sleep_category(9.0) == "적정"
     assert sleep_category(9.1) == "과다"
+
+
+def test_get_me_returns_current_user_info(client, auth_headers):
+    res = client.get("/auth/me", headers=auth_headers("alice"))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["username"] == "alice"
+    assert body["is_admin"] is False
+
+
+def test_get_me_reflects_admin_flag(client, auth_headers):
+    res = client.get("/auth/me", headers=auth_headers("admin", is_admin=True))
+    assert res.json()["is_admin"] is True
+
+
+def test_get_me_requires_auth(client):
+    res = client.get("/auth/me")
+    assert res.status_code == 401
+
+
+def test_admin_users_requires_admin(client, auth_headers):
+    res = client.get("/admin/users", headers=auth_headers("alice"))
+    assert res.status_code == 403
+
+
+def test_admin_users_requires_auth(client):
+    res = client.get("/admin/users")
+    assert res.status_code == 401
+
+
+def test_admin_users_lists_all_active_users_with_status(client, auth_headers):
+    client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("alice"))
+    risky_record = {**SAMPLE_RECORD, "weight": 90, "height": 160, "systolic": 150, "diastolic": 95, "blood_sugar": 130}
+    client.post("/records", json=risky_record, headers=auth_headers("bob"))
+    client.delete("/auth/me", headers=auth_headers("carol"))
+
+    res = client.get("/admin/users", headers=auth_headers("admin", is_admin=True))
+    assert res.status_code == 200
+    users_by_name = {u["username"]: u for u in res.json()["users"]}
+
+    assert "carol" not in users_by_name
+
+    alice = users_by_name["alice"]
+    assert alice["record_count"] == 1
+    assert alice["status"] == "주의필요"  # SAMPLE_RECORD의 BMI(23.0)는 "과체중" 카테고리
+    assert "created_at" in alice
+
+    bob = users_by_name["bob"]
+    assert bob["record_count"] == 1
+    assert bob["status"] == "위험"
+
+    admin_entry = users_by_name["admin"]
+    assert admin_entry["record_count"] == 0
+    assert admin_entry["status"] == "정상"
+
+
+def test_admin_stats_requires_admin(client, auth_headers):
+    res = client.get("/admin/stats", headers=auth_headers("alice"))
+    assert res.status_code == 403
+
+
+def test_admin_stats_returns_aggregates(client, auth_headers):
+    today_str = date.today().isoformat()
+    client.post("/records", json={**SAMPLE_RECORD, "date": today_str}, headers=auth_headers("alice"))
+    risky_record = {
+        **SAMPLE_RECORD,
+        "date": today_str,
+        "weight": 90,
+        "height": 160,
+        "systolic": 150,
+        "diastolic": 95,
+        "blood_sugar": 130,
+    }
+    client.post("/records", json=risky_record, headers=auth_headers("bob"))
+
+    res = client.get("/admin/stats", headers=auth_headers("admin", is_admin=True))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total_users"] == 3  # admin, alice, bob
+    assert body["today_records"] == 2
+    assert body["at_risk_users"] == 1
+    assert body["avg_bmi_all"] == round((23.0 + 35.2) / 2, 1)
+
+
+def test_admin_stats_empty_returns_null_avg_bmi(client, auth_headers):
+    res = client.get("/admin/stats", headers=auth_headers("admin", is_admin=True))
+    body = res.json()
+    assert body["total_users"] == 1
+    assert body["avg_bmi_all"] is None
+
+
+def test_target_user_filters_records_for_admin(client, auth_headers):
+    client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("alice"))
+    client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("bob"))
+
+    res = client.get("/records?target_user=alice", headers=auth_headers("admin", is_admin=True))
+    body = res.json()
+    assert body["count"] == 1
+    assert body["records"][0]["user_id"] == client.get("/auth/me", headers=auth_headers("alice")).json()["id"]
+
+
+def test_target_user_ignored_for_non_admin(client, auth_headers):
+    client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("alice"))
+    client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("bob"))
+
+    res = client.get("/records?target_user=bob", headers=auth_headers("alice"))
+    body = res.json()
+    assert body["count"] == 1  # 여전히 본인(alice) 기록만
+
+
+def test_target_user_nonexistent_returns_empty_for_admin(client, auth_headers):
+    client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("alice"))
+    res = client.get("/records?target_user=nobody", headers=auth_headers("admin", is_admin=True))
+    assert res.json()["count"] == 0
+
+
+def test_target_user_filters_goal_for_admin(client, auth_headers):
+    client.put("/goal", json=GOAL_PAYLOAD, headers=auth_headers("alice"))
+
+    res = client.get("/goal?target_user=alice", headers=auth_headers("admin", is_admin=True))
+    assert res.json()["goal"]["target_weight"] == 65
+
+    res_other = client.get("/goal?target_user=bob", headers=auth_headers("admin", is_admin=True))
+    assert res_other.json()["goal"] is None
+
+
+def test_target_user_filters_weekly_report_for_admin(client, auth_headers):
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+    client.post("/records", json={**SAMPLE_RECORD, "date": yesterday_str}, headers=auth_headers("alice"))
+
+    res = client.get("/reports/weekly?target_user=alice", headers=auth_headers("admin", is_admin=True))
+    assert res.json()["this_week"]["count"] == 1
+
+    res_other = client.get("/reports/weekly?target_user=bob", headers=auth_headers("admin", is_admin=True))
+    assert res_other.json()["this_week"] is None

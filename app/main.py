@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import auth
 from .db import init_db
-from .routers import auth as auth_router
+from .routers import admin, auth as auth_router
 from .routers import goal, records, reports
 
 BASE_DIR = Path(__file__).parent
@@ -28,6 +28,7 @@ app.include_router(auth_router.router)
 app.include_router(records.router)
 app.include_router(goal.router)
 app.include_router(reports.router)
+app.include_router(admin.router)
 
 
 @app.get("/")

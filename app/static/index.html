@@ -46,6 +46,8 @@
   </div>
 
   <div id="app-section">
+    <div id="admin-banner" class="admin-banner">관리자 모드 · 전체 사용자 데이터를 보고 있습니다</div>
+
     <div class="app-header">
       <div class="brand">
         <h1>마이 헬스 로그</h1>
@@ -62,6 +64,7 @@
       <button class="tab-btn" data-tab="records" type="button">기록</button>
       <button class="tab-btn" data-tab="goal" type="button">목표</button>
       <button class="tab-btn" data-tab="report" type="button">리포트</button>
+      <button class="tab-btn" data-tab="users" type="button" id="tab-btn-users">사용자 관리</button>
     </nav>
 
     <!-- 대시보드 -->
@@ -89,20 +92,27 @@
         </div>
       </div>
 
-      <h3>체중 추이 (최근 14일)</h3>
-      <div class="chart-wrapper">
-        <canvas id="weight-chart" role="img" aria-label="최근 14일 체중 추이 라인 차트"></canvas>
-      </div>
+      <div id="dashboard-user-charts">
+        <h3>체중 추이 (최근 14일)</h3>
+        <div class="chart-wrapper">
+          <canvas id="weight-chart" role="img" aria-label="최근 14일 체중 추이 라인 차트"></canvas>
+        </div>
 
-      <h3>혈압 추이 (최근 14일)</h3>
-      <div class="chart-legend" id="bp-chart-legend"></div>
-      <div class="chart-wrapper">
-        <canvas id="bp-chart" role="img" aria-label="최근 14일 수축기/이완기 혈압 추이 라인 차트"></canvas>
+        <h3>혈압 추이 (최근 14일)</h3>
+        <div class="chart-legend" id="bp-chart-legend"></div>
+        <div class="chart-wrapper">
+          <canvas id="bp-chart" role="img" aria-label="최근 14일 수축기/이완기 혈압 추이 라인 차트"></canvas>
+        </div>
       </div>
     </section>
 
     <!-- 기록 -->
     <section id="view-records" class="view">
+      <div class="target-user-select">
+        <label>조회 대상
+          <select id="records-target-user"></select>
+        </label>
+      </div>
       <div class="records-toolbar">
         <h2>기록</h2>
         <button id="toggle-form-btn" class="primary" type="button">새 기록 추가</button>
@@ -152,6 +162,11 @@
 
     <!-- 목표 -->
     <section id="view-goal" class="view">
+      <div class="target-user-select">
+        <label>조회 대상
+          <select id="goal-target-user"></select>
+        </label>
+      </div>
       <h2>목표</h2>
       <form id="goal-form" class="data-form">
         <label>목표 체중(kg)
@@ -172,12 +187,23 @@
 
     <!-- 리포트 -->
     <section id="view-report" class="view">
+      <div class="target-user-select">
+        <label>조회 대상
+          <select id="report-target-user"></select>
+        </label>
+      </div>
       <h2>리포트</h2>
       <div class="stat-tile-grid" id="report-stats"></div>
       <h3>일별 걸음 수 (이번 주)</h3>
       <div class="chart-wrapper">
         <canvas id="steps-chart" role="img" aria-label="이번 주 일별 걸음 수 막대 그래프"></canvas>
       </div>
+    </section>
+
+    <!-- 사용자 관리 (관리자 전용) -->
+    <section id="view-users" class="view">
+      <h2>사용자 관리</h2>
+      <div id="admin-users-list"></div>
     </section>
   </div>
 
