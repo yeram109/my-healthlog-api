@@ -21,6 +21,12 @@ USER_PROFILES = [
     UserProfile("bob", 85.0, 172, 128, 84, 105),
     UserProfile("carol", 68.0, 158, 145, 92, 98),
     UserProfile("dave", 72.0, 170, 118, 78, 132),
+    UserProfile("eve", 50.0, 170, 110, 70, 85),
+    UserProfile("frank", 70.0, 178, 122, 78, 92),
+    UserProfile("grace", 70.0, 170, 130, 82, 105),
+    UserProfile("heidi", 95.0, 160, 148, 94, 140),
+    UserProfile("ivan", 68.0, 175, 145, 92, 88),
+    UserProfile("judy", 58.0, 162, 112, 70, 135),
 ]
 
 WEIGHT_DAILY_DELTA, WEIGHT_RANGE, WEIGHT_ABS = 0.3, 2.0, (40.0, 150.0)
