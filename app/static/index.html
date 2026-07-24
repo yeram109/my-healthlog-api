@@ -110,7 +110,7 @@
     <section id="view-records" class="view">
       <div class="target-user-select">
         <label>조회 대상
-          <select id="records-target-user"></select>
+          <select id="records-target-user" class="target-user-dropdown"></select>
         </label>
       </div>
       <div class="records-toolbar">
@@ -164,7 +164,7 @@
     <section id="view-goal" class="view">
       <div class="target-user-select">
         <label>조회 대상
-          <select id="goal-target-user"></select>
+          <select id="goal-target-user" class="target-user-dropdown"></select>
         </label>
       </div>
       <h2>목표</h2>
@@ -189,14 +189,16 @@
     <section id="view-report" class="view">
       <div class="target-user-select">
         <label>조회 대상
-          <select id="report-target-user"></select>
+          <select id="report-target-user" class="target-user-dropdown"></select>
         </label>
       </div>
       <h2>리포트</h2>
       <div class="stat-tile-grid" id="report-stats"></div>
-      <h3>일별 걸음 수 (이번 주)</h3>
-      <div class="chart-wrapper">
-        <canvas id="steps-chart" role="img" aria-label="이번 주 일별 걸음 수 막대 그래프"></canvas>
+      <div id="report-steps-chart-wrapper">
+        <h3>일별 걸음 수 (이번 주)</h3>
+        <div class="chart-wrapper">
+          <canvas id="steps-chart" role="img" aria-label="이번 주 일별 걸음 수 막대 그래프"></canvas>
+        </div>
       </div>
     </section>
 

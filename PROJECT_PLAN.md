@@ -684,3 +684,44 @@ app/
 처음 구현에서 `viewUserRecords(username)`이 `switchTab("records")`를 먼저 호출하고, 그 다음에 드롭다운 값을 "bob"으로 설정했다. 그런데 `switchTab`이 내부적으로 `loadRecordsList()`를 이미 한 번 트리거해버려서(드롭다운이 아직 빈 값일 때), 목표 사용자로 필터링된 요청과 필터링 안 된 요청 두 개가 동시에 나가는 문제가 있었다. 두 응답 중 나중에 도착하는 쪽이 최종 화면을 덮어써서, 필터링 안 된 요청이 늦게 오면 전체 사용자 데이터(브라우저 검증 중 300건)가 표시되는 버그로 이어졌다. `tabLoaded.records = true`를 드롭다운 값 설정 및 `switchTab` 호출보다 먼저 세팅해 `loadTab`의 자동 호출을 막고, `loadRecordsList()`를 직접 한 번만 호출하도록 고쳤다.
 
 **검증**: `pytest tests/ -v` 94개 전체 통과 (신규 14개: `/auth/me`, `/admin/users`, `/admin/stats` 권한(403/401), 통계·목록 정확성, `target_user` 필터링/무시/존재하지 않는 사용자 케이스). 브라우저에서 admin 로그인 → 배너/보라색 테마/KPI 확인 → "사용자 관리" 탭에서 11명 목록·상태 배지 확인 → "보기" 클릭 시 정확히 해당 사용자 기록만 필터링됨을 확인(레이스 컨디션 수정 후 재검증) → 목표/리포트 탭 `target_user` 드롭다운 동작 확인 → alice(일반 사용자)로 로그인해 관리자 UI/보라색 테마/드롭다운이 전혀 노출되지 않고 기존 파란 테마 그대로임을 확인. 콘솔 에러 없음.
+
+---
+
+## 23. 관리자 대시보드 일관성 개선 — 목표/리포트 개요 + 조회 대상 상태 공유
+
+**목적**: 22장에서 구현한 "조회 대상" 드롭다운이 기록/목표/리포트 탭마다 각자 따로 상태를 들고 있어서, 기록 탭에서 특정 사용자를 선택해도 목표·리포트 탭으로 넘어가면 선택이 풀렸다. 또한 목표/리포트 탭의 "전체 사용자" 뷰가 그냥 admin 개인 데이터(대부분 비어있음)를 보여줘서 의미가 없었다. 이 둘을 고쳤다.
+
+### 23.1 신규 API
+
+- **`GET /admin/goals/overview`**: 목표를 설정한 사용자만 대상으로, `calculate_achievement_percent`(기존 함수 재사용)로 체중 기준 달성률을 계산해 오름차순 정렬. 목표는 있지만 목표 설정일 이후 기록이 없는 사용자는 (기존 `/goal` 단일조회와 동일한 기준으로) 목록에서 제외.
+- **`GET /admin/reports/overview`**: 전체 사용자의 이번주/지난주 평균 체중을 비교해 `logic.classify_weight_trend`로 개선/악화/변화없음을 판정하고 인원수 집계. 평균 체중 변화·평균 걸음 수도 함께 반환.
+- 둘 다 `auth.require_admin` 가드(403), `app/routers/admin.py`에 추가.
+
+### 23.2 프론트엔드: `selectedTargetUser` 전역 상태로 통합
+
+기존에 `records-target-user`/`goal-target-user`/`report-target-user` 3개의 `<select>`가 각자 로컬 상태처럼 동작하던 것을 없애고, 전역 변수 `selectedTargetUser`("all" 기본값) + `setTargetUser(username)` 함수로 통합했다.
+
+```javascript
+function setTargetUser(username) {
+  selectedTargetUser = username;
+  document.querySelectorAll(".target-user-dropdown").forEach((sel) => { sel.value = username; });
+  tabLoaded.records = false;
+  tabLoaded.goal = false;
+  tabLoaded.report = false;
+  refreshCurrentTab();
+}
+```
+
+- 3개 `<select>`에 공통 클래스 `target-user-dropdown`을 부여해 한 번에 값 동기화.
+- 세 탭의 `tabLoaded` 캐시를 무효화만 하고, **현재 활성 탭만** 즉시 새로고침한다. 나머지 탭은 다음에 클릭될 때 `switchTab`이 캐시 무효화를 보고 자동으로 새로 불러온다 — 이렇게 하면 "지금 안 보고 있는 탭까지 억지로 미리 fetch"하지 않으면서도, 탭을 이동하면 항상 최신 선택 기준으로 렌더링된다.
+- "사용자 관리" 탭의 "보기" 버튼과 목표 개요 리스트의 각 행 클릭 모두 `setTargetUser(username)`을 호출하도록 통일.
+
+**22장에서 고쳤던 레이스 컨디션과의 관계**: `viewUserRecords`가 `setTargetUser(username)` 호출 → `switchTab("records")` 순서로 동작한다. `setTargetUser`가 `tabLoaded.records`를 미리 `false`로 무효화해두기 때문에, 그 다음 `switchTab`이 내부적으로 호출하는 `loadTab`이 "아직 로드 안 됨"으로 판단해 정확히 한 번만, 이미 갱신된 `selectedTargetUser` 기준으로 `loadRecordsList()`를 호출한다. (반대로 `refreshCurrentTab()`을 `switchTab` *이후*에 호출하는 순서였다면 이전과 같은 이중 호출 레이스가 재발했을 것.)
+
+### 23.3 "전체 사용자" 뷰 재정의
+
+- **목표 탭**: `selectedTargetUser === "all"`이면 `/admin/goals/overview`를 불러와 "목표 설정 N/M명 · 평균 달성률 X%" 요약 + 달성률 낮은 순 사용자 리스트(미니 progress bar)를 렌더링. 각 행 클릭 시 `setTargetUser`로 그 사용자 상세로 드릴다운.
+- **리포트 탭**: `selectedTargetUser === "all"`이면 `/admin/reports/overview`를 불러와 stat tile(평균 체중 변화/이번주 평균 걸음수) + 개선/악화/변화없음 배지를 렌더링하고, 개인용 걸음 수 막대그래프(`#report-steps-chart-wrapper`)는 숨긴다.
+- 목표 설정 폼(`#goal-form`)은 "전체 사용자"/특정 사용자 여부와 무관하게 그대로 노출한다 — 이건 항상 admin 본인 계정의 목표를 설정하는 폼이라 조회 대상과 무관하며, 명세에도 이 폼의 숨김 처리는 없었다.
+
+**검증**: pytest 8개 신규 추가(102개 전체 통과: `/admin/goals/overview`·`/admin/reports/overview` 403/401/정상응답/빈 상태). 실서버에서 curl로 두 엔드포인트 응답 확인 후, 브라우저로 alice/bob에게 목표를 설정하고 오늘 기록을 추가해 목표 개요 리스트가 정렬·집계되는지 확인, 목표 개요 행 클릭 → 기록/리포트 탭으로 이동해도 선택이 유지되는지 확인, "전체 사용자"로 되돌렸을 때 두 탭 모두 개요 화면으로 정확히 전환되는지 확인(총 기록 수 302건 = 11명 계정 실제 합계와 일치).

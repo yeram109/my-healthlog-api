@@ -75,6 +75,10 @@ def check_ownership(record: Record, user: User) -> bool:
     return user.is_admin or record.user_id == user.id
 
 
+def get_goal_by_user_id(session: Session, user_id: int) -> Goal | None:
+    return session.get(Goal, user_id)
+
+
 def get_goal(session: Session, user: User, target_user: str | None = None) -> Goal | None:
     if user.is_admin and target_user:
         target = session.exec(select(User).where(User.username == target_user)).first()

@@ -674,3 +674,122 @@ def test_target_user_filters_weekly_report_for_admin(client, auth_headers):
 
     res_other = client.get("/reports/weekly?target_user=bob", headers=auth_headers("admin", is_admin=True))
     assert res_other.json()["this_week"] is None
+
+
+def test_admin_goals_overview_requires_admin(client, auth_headers):
+    res = client.get("/admin/goals/overview", headers=auth_headers("alice"))
+    assert res.status_code == 403
+
+
+def test_admin_goals_overview_requires_auth(client):
+    res = client.get("/admin/goals/overview")
+    assert res.status_code == 401
+
+
+def test_admin_goals_overview_returns_sorted_by_progress(client, auth_headers):
+    today_str = date.today().isoformat()
+
+    client.put("/goal", json=GOAL_PAYLOAD, headers=auth_headers("alice"))
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 70, "systolic": 130, "diastolic": 90},
+        headers=auth_headers("alice"),
+    )
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 67, "systolic": 125, "diastolic": 85},
+        headers=auth_headers("alice"),
+    )
+
+    client.put("/goal", json=GOAL_PAYLOAD, headers=auth_headers("bob"))
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 70, "systolic": 130, "diastolic": 90},
+        headers=auth_headers("bob"),
+    )
+    client.post(
+        "/records",
+        json={**SAMPLE_RECORD, "date": today_str, "weight": 50, "systolic": 100, "diastolic": 70},
+        headers=auth_headers("bob"),
+    )
+
+    client.post("/records", json=SAMPLE_RECORD, headers=auth_headers("carol"))  # carol: 목표 미설정
+
+    res = client.get("/admin/goals/overview", headers=auth_headers("admin", is_admin=True))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total_users"] == 4  # admin, alice, bob, carol
+    assert body["users_with_goal"] == 2
+    assert [u["username"] for u in body["users"]] == ["alice", "bob"]  # 달성률 오름차순
+    assert body["users"][0]["progress"] == 60.0
+    assert body["users"][1]["progress"] == 100.0
+    assert body["avg_progress"] == 80.0
+
+
+def test_admin_goals_overview_empty_when_no_goals_set(client, auth_headers):
+    res = client.get("/admin/goals/overview", headers=auth_headers("admin", is_admin=True))
+    body = res.json()
+    assert body["users_with_goal"] == 0
+    assert body["avg_progress"] is None
+    assert body["users"] == []
+
+
+def test_admin_reports_overview_requires_admin(client, auth_headers):
+    res = client.get("/admin/reports/overview", headers=auth_headers("alice"))
+    assert res.status_code == 403
+
+
+def test_admin_reports_overview_requires_auth(client):
+    res = client.get("/admin/reports/overview")
+    assert res.status_code == 401
+
+
+def test_admin_reports_overview_returns_aggregates(client, auth_headers):
+    today = date.today()
+    this_week_dates = [today - timedelta(days=1), today - timedelta(days=3)]
+    last_week_dates = [today - timedelta(days=8), today - timedelta(days=10)]
+
+    for record_date, weight in zip(this_week_dates, [70, 72]):  # alice: 체중 개선(감소)
+        client.post(
+            "/records",
+            json={**SAMPLE_RECORD, "date": record_date.isoformat(), "weight": weight},
+            headers=auth_headers("alice"),
+        )
+    for record_date, weight in zip(last_week_dates, [75, 77]):
+        client.post(
+            "/records",
+            json={**SAMPLE_RECORD, "date": record_date.isoformat(), "weight": weight},
+            headers=auth_headers("alice"),
+        )
+
+    for record_date, weight in zip(this_week_dates, [80, 82]):  # bob: 체중 악화(증가)
+        client.post(
+            "/records",
+            json={**SAMPLE_RECORD, "date": record_date.isoformat(), "weight": weight},
+            headers=auth_headers("bob"),
+        )
+    for record_date, weight in zip(last_week_dates, [75, 77]):
+        client.post(
+            "/records",
+            json={**SAMPLE_RECORD, "date": record_date.isoformat(), "weight": weight},
+            headers=auth_headers("bob"),
+        )
+
+    res = client.get("/admin/reports/overview", headers=auth_headers("admin", is_admin=True))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["improved_users"] == 1
+    assert body["worsened_users"] == 1
+    assert body["unchanged_users"] == 0
+    assert body["avg_weight_change"] == 0.0
+    assert body["avg_steps_this_week"] == 8000
+
+
+def test_admin_reports_overview_empty_returns_nulls(client, auth_headers):
+    res = client.get("/admin/reports/overview", headers=auth_headers("admin", is_admin=True))
+    body = res.json()
+    assert body["avg_weight_change"] is None
+    assert body["avg_steps_this_week"] is None
+    assert body["improved_users"] == 0
+    assert body["worsened_users"] == 0
+    assert body["unchanged_users"] == 0

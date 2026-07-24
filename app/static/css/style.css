@@ -322,6 +322,9 @@ form.data-form .full { grid-column: 1 / -1; }
 .user-row .ur-meta { color: var(--text-secondary); font-size: 0.8rem; }
 .user-row .ur-actions { margin-left: auto; }
 
+.goal-overview-row { cursor: pointer; }
+.goal-overview-row:hover { border-color: var(--accent); }
+
 /* ---------- goal view ---------- */
 .goal-card {
   border: 1px solid var(--border);

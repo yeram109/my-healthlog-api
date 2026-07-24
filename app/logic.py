@@ -132,3 +132,11 @@ def summarize_user_status(bmi_category: str, bp_category: str, sugar_category: s
     if bmi_category in CAUTION_BMI_CATEGORIES or bp_category in CAUTION_BP_CATEGORIES or sugar_category in CAUTION_SUGAR_CATEGORIES:
         return "주의필요"
     return "정상"
+
+
+def classify_weight_trend(this_week_avg_weight: float, last_week_avg_weight: float) -> str:
+    if this_week_avg_weight < last_week_avg_weight:
+        return "improved"
+    if this_week_avg_weight > last_week_avg_weight:
+        return "worsened"
+    return "unchanged"

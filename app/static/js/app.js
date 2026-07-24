@@ -22,13 +22,12 @@ const STATUS_BADGE_CLASS = {
   "위험": "badge-danger",
 };
 
-const TARGET_USER_SELECT_IDS = ["records-target-user", "goal-target-user", "report-target-user"];
-
 let editingId = null;
 let weightChart = null;
 let bpChart = null;
 let stepsChart = null;
 let isAdminUser = false;
+let selectedTargetUser = "all";
 const tabLoaded = { dashboard: false, records: false, goal: false, report: false, users: false };
 
 /* ---------- auth helpers ---------- */
@@ -72,6 +71,7 @@ async function showApp() {
   }
   const me = await meRes.json();
   isAdminUser = me.is_admin;
+  selectedTargetUser = "all";
   document.getElementById("app-section").classList.toggle("admin-mode", isAdminUser);
 
   if (isAdminUser) {
@@ -88,18 +88,34 @@ async function loadAdminUsernameOptions() {
   if (!res.ok) return;
   const data = await res.json();
   const usernames = data.users.map((u) => u.username);
-  const optionsHtml = `<option value="">전체 사용자</option>` +
+  const optionsHtml = `<option value="all">전체 사용자</option>` +
     usernames.map((n) => `<option value="${n}">${n}</option>`).join("");
-  TARGET_USER_SELECT_IDS.forEach((id) => {
-    const select = document.getElementById(id);
-    if (select) select.innerHTML = optionsHtml;
+  document.querySelectorAll(".target-user-dropdown").forEach((select) => {
+    select.innerHTML = optionsHtml;
+    select.value = selectedTargetUser;
   });
 }
 
-function currentTargetUser(selectId) {
+function setTargetUser(username) {
+  selectedTargetUser = username;
+  document.querySelectorAll(".target-user-dropdown").forEach((sel) => { sel.value = username; });
+  tabLoaded.records = false;
+  tabLoaded.goal = false;
+  tabLoaded.report = false;
+  refreshCurrentTab();
+}
+
+function refreshCurrentTab() {
+  const activeBtn = document.querySelector(".tab-btn.active");
+  const active = activeBtn ? activeBtn.dataset.tab : null;
+  if (active === "records") { tabLoaded.records = true; loadRecordsList(); }
+  else if (active === "goal") { tabLoaded.goal = true; loadGoalView(); }
+  else if (active === "report") { tabLoaded.report = true; loadReportView(); }
+}
+
+function targetUserQueryValue() {
   if (!isAdminUser) return "";
-  const el = document.getElementById(selectId);
-  return el && el.value ? el.value : "";
+  return selectedTargetUser === "all" ? "" : selectedTargetUser;
 }
 
 function isUnauthorized(res) {
@@ -420,7 +436,7 @@ function renderBpChart(sorted) {
 /* ---------- records view ---------- */
 
 async function loadRecordsList() {
-  const targetUser = currentTargetUser("records-target-user");
+  const targetUser = targetUserQueryValue();
 
   const toggleFormBtn = document.getElementById("toggle-form-btn");
   toggleFormBtn.style.display = targetUser ? "none" : "inline-block";
@@ -593,12 +609,50 @@ async function submitForm(event) {
 /* ---------- goal view ---------- */
 
 async function loadGoalView() {
-  const targetUser = currentTargetUser("goal-target-user");
+  if (isAdminUser && selectedTargetUser === "all") {
+    const res = await fetch("/admin/goals/overview", { headers: getAuthHeaders() });
+    if (isUnauthorized(res)) return;
+    if (!res.ok) {
+      showError(res.status, await res.json());
+      return;
+    }
+    renderGoalsOverview(await res.json());
+    return;
+  }
+
+  const targetUser = targetUserQueryValue();
   const qs = targetUser ? `?target_user=${encodeURIComponent(targetUser)}` : "";
   const res = await fetch(`/goal${qs}`, { headers: getAuthHeaders() });
   if (isUnauthorized(res)) return;
   const data = await res.json();
   renderGoalDisplay(data);
+}
+
+function renderGoalsOverview(data) {
+  const el = document.getElementById("goal-display");
+  const avgText = data.avg_progress === null ? "-" : `${data.avg_progress}%`;
+  let html = `<div class="goal-card">`;
+  html += `<div class="goal-metric-label">목표 설정 ${data.users_with_goal}/${data.total_users}명 · 평균 달성률 ${avgText}</div>`;
+  if (data.users.length === 0) {
+    html += `<p class="empty-state">목표를 설정한 사용자가 없습니다.</p>`;
+  } else {
+    for (const u of data.users) {
+      html += `
+        <div class="user-row goal-overview-row" data-username="${u.username}">
+          <span class="ur-name">${u.username}</span>
+          <span class="ur-meta">${u.current_weight}kg → 목표 ${u.target_weight}kg</span>
+          <div class="progress-track" style="flex:1 1 120px;"><div class="progress-fill" style="width:${u.progress}%"></div></div>
+          <span class="ur-meta">${u.progress}%</span>
+        </div>
+      `;
+    }
+  }
+  html += `</div>`;
+  el.innerHTML = html;
+
+  el.querySelectorAll(".goal-overview-row").forEach((row) => {
+    row.addEventListener("click", () => setTargetUser(row.dataset.username));
+  });
 }
 
 function progressMetric(label, targetText, percent) {
@@ -664,7 +718,24 @@ async function submitGoal(event) {
 /* ---------- report view ---------- */
 
 async function loadReportView() {
-  const targetUser = currentTargetUser("report-target-user");
+  const chartWrapper = document.getElementById("report-steps-chart-wrapper");
+
+  if (isAdminUser && selectedTargetUser === "all") {
+    chartWrapper.style.display = "none";
+    if (stepsChart) { stepsChart.destroy(); stepsChart = null; }
+
+    const res = await fetch("/admin/reports/overview", { headers: getAuthHeaders() });
+    if (isUnauthorized(res)) return;
+    if (!res.ok) {
+      showError(res.status, await res.json());
+      return;
+    }
+    renderReportsOverview(await res.json());
+    return;
+  }
+
+  chartWrapper.style.display = "";
+  const targetUser = targetUserQueryValue();
   const qs = targetUser ? `?target_user=${encodeURIComponent(targetUser)}` : "";
   const res = await fetch(`/reports/weekly${qs}`, { headers: getAuthHeaders() });
   if (isUnauthorized(res)) return;
@@ -674,6 +745,30 @@ async function loadReportView() {
   const stepsRecords = await fetchRecordsSince(7, targetUser);
   if (stepsRecords === null) return;
   renderStepsChart(stepsRecords);
+}
+
+function renderReportsOverview(data) {
+  const el = document.getElementById("report-stats");
+  const weightChangeText = data.avg_weight_change === null ? "-" : `${data.avg_weight_change}kg`;
+  const stepsText = data.avg_steps_this_week === null ? "-" : data.avg_steps_this_week;
+  el.innerHTML = `
+    <div class="stat-tile">
+      <div class="stat-label">평균 체중 변화</div>
+      <div class="stat-value">${weightChangeText}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">이번주 평균 걸음 수</div>
+      <div class="stat-value">${stepsText}</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">개선 / 악화 / 변화없음</div>
+      <div class="stat-value" style="font-size:1rem; display:flex; gap:6px; flex-wrap:wrap;">
+        <span class="badge badge-success">개선 ${data.improved_users}</span>
+        <span class="badge badge-danger">악화 ${data.worsened_users}</span>
+        <span class="badge badge-warning">변화없음 ${data.unchanged_users}</span>
+      </div>
+    </div>
+  `;
 }
 
 function deltaText(value, unit) {
@@ -775,11 +870,8 @@ function renderUserRow(user) {
 }
 
 function viewUserRecords(username) {
-  const select = document.getElementById("records-target-user");
-  if (select) select.value = username;
-  tabLoaded.records = true;
+  setTargetUser(username);
   switchTab("records");
-  loadRecordsList();
 }
 
 /* ---------- wire up ---------- */
@@ -805,9 +897,9 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-document.getElementById("records-target-user").addEventListener("change", loadRecordsList);
-document.getElementById("goal-target-user").addEventListener("change", loadGoalView);
-document.getElementById("report-target-user").addEventListener("change", loadReportView);
+document.querySelectorAll(".target-user-dropdown").forEach((sel) => {
+  sel.addEventListener("change", () => setTargetUser(sel.value));
+});
 
 if (getToken()) {
   showApp();
