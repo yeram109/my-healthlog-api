@@ -26,6 +26,8 @@ let editingId = null;
 let weightChart = null;
 let bpChart = null;
 let stepsChart = null;
+let userGrowthChart = null;
+let activityChart = null;
 let isAdminUser = false;
 let selectedTargetUser = "all";
 const tabLoaded = { dashboard: false, records: false, goal: false, report: false, users: false };
@@ -300,6 +302,66 @@ async function loadAdminDashboard() {
   }
   const stats = await res.json();
   renderAdminKpiCards(stats);
+  await loadAdminDashboardCharts();
+}
+
+async function loadAdminDashboardCharts() {
+  const res = await fetch("/admin/stats/timeseries?days=14", { headers: getAuthHeaders() });
+  if (isUnauthorized(res)) return;
+  if (!res.ok) {
+    showError(res.status, await res.json());
+    return;
+  }
+  const data = await res.json();
+  renderUserGrowthChart(data);
+  renderActivityChart(data);
+}
+
+function renderUserGrowthChart(data) {
+  const ctx = document.getElementById("user-growth-chart");
+  if (userGrowthChart) userGrowthChart.destroy();
+  userGrowthChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: data.dates.map((d) => d.slice(5)),
+      datasets: [{
+        data: data.cumulative_users,
+        borderColor: "#7c3aed",
+        backgroundColor: "rgba(124, 58, 237, 0.1)",
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2,
+        pointRadius: 0,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+    },
+  });
+}
+
+function renderActivityChart(data) {
+  const ctx = document.getElementById("activity-chart");
+  if (activityChart) activityChart.destroy();
+  activityChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: data.dates.map((d) => d.slice(5)),
+      datasets: [{
+        data: data.daily_new_records,
+        backgroundColor: "#7c3aed",
+        borderRadius: 4,
+        barThickness: 20,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+    },
+  });
 }
 
 function renderAdminKpiCards(stats) {

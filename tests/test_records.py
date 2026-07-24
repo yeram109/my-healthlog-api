@@ -793,3 +793,43 @@ def test_admin_reports_overview_empty_returns_nulls(client, auth_headers):
     assert body["improved_users"] == 0
     assert body["worsened_users"] == 0
     assert body["unchanged_users"] == 0
+
+
+def test_admin_stats_timeseries_requires_admin(client, auth_headers):
+    res = client.get("/admin/stats/timeseries", headers=auth_headers("alice"))
+    assert res.status_code == 403
+
+
+def test_admin_stats_timeseries_requires_auth(client):
+    res = client.get("/admin/stats/timeseries")
+    assert res.status_code == 401
+
+
+def test_admin_stats_timeseries_default_days_length(client, auth_headers):
+    res = client.get("/admin/stats/timeseries", headers=auth_headers("admin", is_admin=True))
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["dates"]) == 14
+    assert len(body["cumulative_users"]) == 14
+    assert len(body["daily_new_records"]) == 14
+    assert body["dates"][-1] == date.today().isoformat()
+    assert body["dates"][0] == (date.today() - timedelta(days=13)).isoformat()
+
+
+def test_admin_stats_timeseries_custom_days(client, auth_headers):
+    res = client.get("/admin/stats/timeseries?days=7", headers=auth_headers("admin", is_admin=True))
+    body = res.json()
+    assert len(body["dates"]) == 7
+    assert body["dates"][0] == (date.today() - timedelta(days=6)).isoformat()
+
+
+def test_admin_stats_timeseries_counts_are_accurate(client, auth_headers):
+    today_str = date.today().isoformat()
+    client.post("/records", json={**SAMPLE_RECORD, "date": today_str}, headers=auth_headers("alice"))
+    client.post("/records", json={**SAMPLE_RECORD, "date": today_str}, headers=auth_headers("bob"))
+
+    res = client.get("/admin/stats/timeseries?days=1", headers=auth_headers("admin", is_admin=True))
+    body = res.json()
+    assert body["dates"] == [today_str]
+    assert body["daily_new_records"] == [2]
+    assert body["cumulative_users"] == [3]  # admin, alice, bob 모두 테스트 실행일 가입

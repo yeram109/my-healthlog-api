@@ -250,6 +250,9 @@ form.data-form .full { grid-column: 1 / -1; }
 
 #app-section.admin-mode #dashboard-user-charts { display: none; }
 
+#dashboard-admin-charts { display: none; }
+#app-section.admin-mode #dashboard-admin-charts { display: block; }
+
 /* ---------- charts ---------- */
 .chart-wrapper {
   position: relative;

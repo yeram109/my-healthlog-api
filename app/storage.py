@@ -99,3 +99,17 @@ def set_goal(session: Session, user: User, goal: dict[str, Any]) -> Goal:
     session.commit()
     session.refresh(db_goal)
     return db_goal
+
+
+def get_cumulative_users_by_day(session: Session, dates: list[str]) -> list[int]:
+    created_dates = sorted(u.created_at for u in session.exec(select(User).where(User.is_active == True)).all())  # noqa: E712
+    return [sum(1 for c in created_dates if c <= d) for d in dates]
+
+
+def get_daily_record_counts(session: Session, dates: list[str]) -> list[int]:
+    active_user_ids = {u.id for u in session.exec(select(User).where(User.is_active == True)).all()}  # noqa: E712
+    counts: dict[str, int] = {}
+    for r in session.exec(select(Record)).all():
+        if r.user_id in active_user_ids:
+            counts[r.date] = counts.get(r.date, 0) + 1
+    return [counts.get(d, 0) for d in dates]

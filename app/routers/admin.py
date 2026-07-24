@@ -145,3 +145,16 @@ def reports_overview(session: Session = Depends(get_session), _: User = Depends(
         "worsened_users": worsened,
         "unchanged_users": unchanged,
     }
+
+
+@router.get("/stats/timeseries")
+def stats_timeseries(
+    days: int = 14, session: Session = Depends(get_session), _: User = Depends(auth.require_admin)
+) -> dict:
+    today = date_type.today()
+    dates = [(today - timedelta(days=offset)).isoformat() for offset in range(days - 1, -1, -1)]
+    return {
+        "dates": dates,
+        "cumulative_users": storage.get_cumulative_users_by_day(session, dates),
+        "daily_new_records": storage.get_daily_record_counts(session, dates),
+    }

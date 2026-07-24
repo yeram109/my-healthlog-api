@@ -116,6 +116,7 @@ python scripts/migrate_json_to_db.py
 | GET | `/admin/stats` | (관리자 전용, 비관리자 403) 총 사용자 수/오늘 등록된 기록 수/위험군 사용자 수/전체 평균 BMI |
 | GET | `/admin/goals/overview` | (관리자 전용, 비관리자 403) 목표 설정한 사용자만 대상, 체중 달성률 오름차순 |
 | GET | `/admin/reports/overview` | (관리자 전용, 비관리자 403) 전체 평균 체중 변화/걸음 수, 개선·악화·변화없음 인원수 |
+| GET | `/admin/stats/timeseries?days=` | (관리자 전용, 비관리자 403) 최근 N일(기본 14일) 누적 가입자 수 추이 + 일별 기록 등록 건수 |
 
 ## 건강 분류 기준
 
